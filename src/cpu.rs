@@ -1,0 +1,443 @@
+
+#[allow(dead_code)]
+#[derive(Debug)]
+enum Register {
+    A, F,
+    B, C,
+    D, E,
+    H, L,
+    AF,
+    BC,
+    DE,
+    HL,
+    SP
+}
+
+#[allow(dead_code)]
+struct Regs {
+    a:u8,
+    f:u8,
+    b:u8,
+    c:u8,
+    d:u8,
+    e:u8,
+    h:u8,
+    l:u8,
+    sp: u16,
+    pc: u16,
+}
+
+#[allow(dead_code)]
+impl Regs {
+
+    fn new()->Regs {
+        Regs{
+            a:0, f:0,
+            b:0, c:0, 
+            d:0, e:0,
+            h:0, l:0,
+            sp: 0,
+            pc: 0
+        }
+    }
+
+    fn read8(&self, reg:Register) -> u8
+    {
+        match reg
+        {
+            Register::A => self.a,
+            Register::F => self.f,
+            Register::B => self.b,
+            Register::C => self.c,
+            Register::D => self.d,
+            Register::E => self.e,
+            Register::H => self.h,
+            Register::L => self.l,
+            _ => panic!("Invalid 8bit register read of {:?}", reg)
+        }
+    }
+
+    fn read16(&self, reg:Register) -> u16 {
+        match reg {
+            Register::AF => (self.a as u16) << 8 | (self.f as u16),
+            Register::BC => (self.b as u16) << 8 | (self.c as u16),
+            Register::DE => (self.d as u16) << 8 | (self.e as u16),
+            Register::HL => (self.h as u16) << 8 | (self.l as u16),
+            _ => panic!("Invalid 16 bit register read {:?}", reg)
+        }
+    }
+
+    fn write8(&mut self, reg:Register, value:u8) {
+        match reg {
+            Register::A => self.a = value,
+            Register::F => self.f = value,
+            Register::B => self.b = value,
+            Register::C => self.c = value,
+            Register::D => self.d = value,
+            Register::E => self.e = value,
+            Register::H => self.h = value,
+            Register::L => self.l = value,
+            _ => panic!("Invalid 8bit register write of {}=>{:?}", value, reg)
+        }
+    }
+
+    fn write16(&mut self, reg:Register, value:u16) {
+        match reg{
+            Register::AF => { 
+                self.a = (value >> 8) as u8;
+                self.f = value as u8;
+            },
+            Register::BC => {
+                self.b = (value >> 8) as u8;
+                self.c = value as u8;
+            }
+            Register::DE => {
+                self.d = (value >> 8) as u8;
+                self.e = value as u8;
+            }
+            Register::HL => {
+                self.h = (value >> 8) as u8;
+                self.l = value as u8;
+            }
+            _ => panic!("Invalid 8bit register write of {}=>{:?}", value, reg)
+        }
+    }
+}
+
+#[allow(dead_code)]
+struct Cpu {
+    reg: Regs
+}
+
+#[allow(dead_code)]
+impl Cpu {
+    fn new()->Cpu {
+        Cpu{
+            reg:Regs::new()
+        }
+    }
+}
+
+#[allow(dead_code)]
+enum Operation {
+    // A no operation.
+    Nop,
+    // A stop operation
+    Stop,
+
+    // A register to register transfer.
+    LdRR{dst:Register, src:Register},
+    // A register from memory transfer.
+    LdRM{dst:Register, src:Register},
+    // A 16bit immediate load into a 16 bit register.
+    LdR16I16{dst:Register},
+    // Store a register into memory pointed to by 16bit register.
+    LdM16R{dst:Register, src:Register},
+    // Load a register with an 8 bit immediate value.
+    LdRI{dst:Register},
+    // Save a 16 bit register to an immediate address.
+    LdI16R16{src:Register},
+
+    // Increment a 16 bit register.
+    IncR16{dst:Register},
+    // Increment an 8 bit register.
+    IncR{dst:Register},
+    
+    // Decrement an 8 bit register
+    DecR{dst:Register},
+    // Decrement a 16 bit register
+    DecR16{dst:Register},
+
+    // Rotate A once to the left, and carry bit 7 into the carry flag.
+    Rlca,
+    // Rotate A once to the right and carry bit 0 into the carry flag.
+    Rrca,
+
+    // Add two 16 bit registers.
+    AddR16R16{dst:Register, src:Register},
+}
+
+#[allow(dead_code)]
+struct Instruction{
+    op:Operation,
+    length:u8,
+    cycles:u8,
+}
+
+#[allow(dead_code)]
+const INSTRUCTION_TABLE: [Instruction;256] = [
+    // 0x00 NOP
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    // 0x01 LD BC, d16
+    Instruction{op:Operation::LdR16I16{dst:Register::BC}, length:3, cycles:3},
+    // 0x02 LD (BC), A
+    Instruction{op:Operation::LdM16R{dst:Register::BC, src:Register::A}, length:1, cycles:2},
+    // 0x03 INC BC
+    Instruction{op:Operation::IncR16{dst:Register::BC}, length: 1, cycles:2},
+    // 0x04 INC B
+    Instruction{op:Operation::IncR{dst:Register::B}, length:1, cycles:1},
+    // 0x05 DEC B 1, 1
+    Instruction{op:Operation::DecR{dst:Register::B}, length:1, cycles:1},
+    // 0x06 LD B, D8 2, 2
+    Instruction{op:Operation::LdRI{dst:Register::B}, length:2, cycles:2},
+    // 0x07 RLCA 1, 1
+    Instruction{op:Operation::Rlca, length: 1, cycles:1},
+    // 0x08 LD (A16), SP 3, 5
+    Instruction{op:Operation::LdI16R16{src:Register::SP}, length:3, cycles:5},
+    // 0x09 ADD HL, BC 1, 2
+    Instruction{op:Operation::AddR16R16{dst:Register::HL, src:Register::BC}, length:1, cycles:2},
+    // 0x0A LD A, (BC) 1, 2
+    Instruction{op:Operation::LdRM{dst:Register::A, src:Register::BC}, length:1, cycles:2},
+    // 0x0B DEC BC  1, 2
+    Instruction{op:Operation::DecR16{dst:Register::BC}, length:1, cycles:2},
+    // 0x0C INC C   1, 1
+    Instruction{op:Operation::IncR{dst:Register::C}, length:1, cycles:1},
+    // 0x0D DEC C   1, 1
+    Instruction{op:Operation::DecR{dst:Register::C}, length:1, cycles:1},
+    // 0x0E LD C d8 2, 2
+    Instruction{op:Operation::LdRI{dst: Register::C}, length:1, cycles:1},
+    // 0x0F RRCA    1, 1
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+
+    // Temporary NOPs
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1},
+];
