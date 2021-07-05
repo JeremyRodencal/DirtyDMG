@@ -1,3 +1,4 @@
+use crate::bus::{BusRW};
 
 #[allow(dead_code)]
 #[derive(Debug)]
@@ -105,16 +106,28 @@ impl Regs {
 }
 
 #[allow(dead_code)]
-struct Cpu {
+pub struct Cpu {
     reg: Regs
 }
 
 #[allow(dead_code)]
 impl Cpu {
-    fn new()->Cpu {
+    pub fn new()->Cpu {
         Cpu{
             reg:Regs::new()
         }
+    }
+
+    pub fn write_mem_test(&mut self, bus:&mut impl BusRW, addr: usize, value: u8)
+    {
+        self.reg.a = value;
+        bus.bus_write8(addr, value);
+    }
+    
+    pub fn read_mem_test(&mut self, bus:&mut impl BusRW, addr: usize)->u8
+    {
+        self.reg.a = bus.bus_read8(addr);
+        return self.reg.a
     }
 }
 
