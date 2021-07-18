@@ -133,12 +133,27 @@ impl Cpu {
         return self.reg.a
     }
 
-    fn execute_instruction(&mut self, bus:&mut impl BusRW, data: &[u8]) -> u8
+    fn read_pc(&mut self, bus:&mut impl BusRW) -> u8
     {
-        let opcode = data[0];
-        let instruction = &INSTRUCTION_TABLE[opcode as usize];
+        let value = bus.bus_read8(self.reg.pc as usize);
+        self.reg.pc += 1;
+        return value;
+    }
 
-        self.execute_operation(bus, data, &instruction.op);
+    fn execute_instruction(&mut self, bus:&mut impl BusRW) -> u8
+    {
+        // Read the opcode, fetch the instruction details, and read in the entire instruction.
+        let opcode = self.read_pc(bus);
+        let instruction = &INSTRUCTION_TABLE[opcode as usize];
+        let mut data = [opcode, 0, 0];
+        for i in 1..1+instruction.length
+        {
+            data[i as usize] = self.read_pc(bus);
+        }
+
+        // Execute the operation in the instruction
+        self.execute_operation(bus, &data, &instruction.op);
+
         //TODO do something with cycle length
 
         return instruction.cycles;
