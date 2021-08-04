@@ -115,14 +115,18 @@ impl Regs {
 
 #[allow(dead_code)]
 pub struct Cpu {
-    reg: Regs
+    reg: Regs,
+    busy_cycles: u32, // Number of cycles until ready to execute
+    cycle: u64,       // Current cycle number
 }
 
 #[allow(dead_code)]
 impl Cpu {
     pub fn new()->Cpu {
         Cpu{
-            reg:Regs::new()
+            reg:Regs::new(),
+            busy_cycles: 0,
+            cycle: 0
         }
     }
 
@@ -156,12 +160,11 @@ impl Cpu {
             data[i as usize] = self.read_pc(bus);
         }
 
+        self.busy_cycles = instruction.cycles as u32;
+
         // Execute the operation in the instruction
         self.execute_operation(bus, &data, &instruction.op);
-
-        //TODO do something with cycle length
-
-        return instruction.cycles;
+        return self.busy_cycles as u8;
     }
 
     fn execute_operation(&mut self, bus:&mut impl BusRW, data: &[u8], op:&Operation)
@@ -334,15 +337,34 @@ impl Cpu {
                 self.reg.a |= carry_in;
             },
 
-            Jri => {
-                // get the signed jump offset, then add it to the program counter.
-                let jump_offset = data[1] as i8;
-                self.reg.pc = self.reg.pc.wrapping_add(jump_offset as u16);
+            Jr{cond} => {
+                let take_branch = match cond {
+                    JumpCondition::Always => true,
+                    JumpCondition::Z =>  self.reg.f & Regs::ZERO_FLAG  != 0,
+                    JumpCondition::Nz => self.reg.f & Regs::ZERO_FLAG  == 0,
+                    JumpCondition::C =>  self.reg.f & Regs::CARRY_FLAG != 0,
+                    JumpCondition::Nc => self.reg.f & Regs::CARRY_FLAG != 0,
+                };
+                if take_branch {
+                    // get the signed jump offset, then add it to the program counter.
+                    let jump_offset = data[1] as i8;
+                    self.reg.pc = self.reg.pc.wrapping_add(jump_offset as u16);
+                    self.busy_cycles += 1;
+                }
             },
 
             _ => panic!("not implemented")
         }
     }
+}
+
+#[allow(dead_code)]
+enum JumpCondition {
+    Always, // Always jump
+    Z,      // Jump if zero flag set
+    Nz,     // Jump if zero flag not set
+    C,      // Jump if carry flag set
+    Nc,     // Jump if carry flag not set
 }
 
 #[allow(dead_code)]
@@ -387,8 +409,8 @@ enum Operation {
     // Add two 16 bit registers.
     AddR16R16{dst:Register, src:Register},
 
-    // Jump relative immediate (research required...)
-    Jri,
+    // Jump relative
+    Jr{cond: JumpCondition},
 }
 
 #[allow(dead_code)]
@@ -450,7 +472,7 @@ const INSTRUCTION_TABLE: [Instruction;256] = [
     // 0x17 Rla
     Instruction{op:Operation::Rla, length:1, cycles:1},
     // 0x18 Jd s8
-    Instruction{op:Operation::Jri, length:2, cycles:3},
+    Instruction{op:Operation::Jr{cond: JumpCondition::Always}, length:2, cycles:2},
     // 0x19 Add HL, DE
     Instruction{op:Operation::AddR16R16{dst:Register::HL, src:Register::DE}, length:1, cycles:2},
     // 0x1A Ld A, (DE)
@@ -467,7 +489,8 @@ const INSTRUCTION_TABLE: [Instruction;256] = [
     Instruction{op:Operation::Rra, length:1, cycles:1},
 
     // 0x2X
-    Instruction{op:Operation::Nop, length:1, cycles:1},
+    // 0x20 JR NZ, s8
+    Instruction{op:Operation::Jr{cond: JumpCondition::Nz}, length:2, cycles:2},
     Instruction{op:Operation::Nop, length:1, cycles:1},
     Instruction{op:Operation::Nop, length:1, cycles:1},
     Instruction{op:Operation::Nop, length:1, cycles:1},
