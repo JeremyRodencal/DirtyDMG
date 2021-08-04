@@ -310,7 +310,36 @@ impl Cpu {
                 if result < initial {
                     self.reg.f = self.reg.f | Regs::CARRY_FLAG;
                 }
-            }
+            },
+
+            Rla => {
+                // Determine the carry in for bit zero.
+                let carry_in = 
+                    if self.reg.f & Regs::CARRY_FLAG > 0 {1}
+                    else {0};
+                // Determine if the carry flag should be set.
+                self.reg.f = 
+                    if self.reg.a & 0x80 > 0 {Regs::CARRY_FLAG}
+                    else {0};
+
+                // Shift A over, then OR in the bottom bit.
+                self.reg.a <<= 1;
+                self.reg.a |= carry_in;
+            },
+
+            Rra => {
+                let carry_in = (self.reg.f & Regs::CARRY_FLAG) << 3;
+                self.reg.f = (self.reg.a & 0x01) << 4;
+                self.reg.a >>= 1;
+                self.reg.a |= carry_in;
+            },
+
+            Jri => {
+                // get the signed jump offset, then add it to the program counter.
+                let jump_offset = data[1] as i8;
+                self.reg.pc = self.reg.pc.wrapping_add(jump_offset as u16);
+            },
+
             _ => panic!("not implemented")
         }
     }
@@ -346,13 +375,20 @@ enum Operation {
     // Decrement a 16 bit register
     DecR16{dst:Register},
 
-    // Rotate A once to the left, and carry bit 7 into the carry flag.
+    // Rotate A once to the left, and carry bit 7 into the carry flag and bit zero.
     Rlca,
     // Rotate A once to the right and carry bit 0 into the carry flag.
     Rrca,
+    // Rotate A once to the left, rotate carry into bit 0, rotate bit 7 into the carry flag
+    Rla,
+    // Rotate A once to the right, rotate carry into bit 7, rotate bit zero into the carry flag
+    Rra,
 
     // Add two 16 bit registers.
     AddR16R16{dst:Register, src:Register},
+
+    // Jump relative immediate (research required...)
+    Jri,
 }
 
 #[allow(dead_code)]
@@ -397,24 +433,38 @@ const INSTRUCTION_TABLE: [Instruction;256] = [
     // 0x0F RRCA    1, 1
     Instruction{op:Operation::Rrca, length:1, cycles:1},
 
-    // Temporary NOPs
-    // 0x1X
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
+    // 0x10 Stop
+    Instruction{op:Operation::Stop, length:2, cycles:1},
+    // 0x11 LD DE, d16
+    Instruction{op:Operation::LdR16I16{dst: Register::DE}, length:3, cycles:3},
+    // 0x12 LD (DE), A
+    Instruction{op:Operation::LdMR16{dst:Register::DE, src:Register::A}, length:1, cycles:2},
+    // 0x13 Inc DE
+    Instruction{op:Operation::IncR16{dst:Register::DE}, length:1, cycles:2},
+    // 0x14 Inc D
+    Instruction{op:Operation::IncR{dst:Register::D}, length:1, cycles:1},
+    // 0x15 Dec D
+    Instruction{op:Operation::DecR{dst:Register::D}, length:1, cycles:1},
+    // 0x16 Ld D, d8
+    Instruction{op:Operation::LdRI{dst:Register::D}, length:2, cycles:2},
+    // 0x17 Rla
+    Instruction{op:Operation::Rla, length:1, cycles:1},
+    // 0x18 Jd s8
+    Instruction{op:Operation::Jri, length:2, cycles:3},
+    // 0x19 Add HL, DE
+    Instruction{op:Operation::AddR16R16{dst:Register::HL, src:Register::DE}, length:1, cycles:2},
+    // 0x1A Ld A, (DE)
+    Instruction{op:Operation::LdRM{dst:Register::A, src:Register::DE}, length:1, cycles:2},
+    // 0x1B Dec DE
+    Instruction{op:Operation::DecR16{dst:Register::DE}, length:1, cycles:2},
+    // 0x1C Inc E
+    Instruction{op:Operation::IncR{dst:Register::E}, length:1, cycles:1},
+    // 0x1D Dec E
+    Instruction{op:Operation::DecR{dst:Register::E}, length:1, cycles:1},
+    // 0x1E Ld E, d8
+    Instruction{op:Operation::LdRI{dst:Register::E}, length:2, cycles:2},
+    // 0x1F Rra
+    Instruction{op:Operation::Rra, length:1, cycles:1},
 
     // 0x2X
     Instruction{op:Operation::Nop, length:1, cycles:1},
@@ -688,6 +738,168 @@ mod test {
         }
     }
 
+    fn test_op_ldR16I16(inst: &[u8], dst:Register, value:u16)
+    {
+        let mut cpu = Cpu::new();
+        let mut ram = get_ram();
+        load_into_ram(&mut ram, &inst);
+
+        let cycles = cpu.execute_instruction(&mut ram);
+
+        assert_eq!(cycles, 3);
+        assert_eq!(cpu.reg.pc, 3);
+        assert_eq!(cpu.reg.read16(dst), value);
+    }
+
+    fn test_op_ldMR16(inst: &[u8], dst:Register, src:Register, addr:u16, value:u8)
+    {
+        let mut cpu = Cpu::new();
+        let mut ram = get_ram();
+
+        load_into_ram(&mut ram, &inst);
+
+        cpu.reg.write16(dst, addr);
+        cpu.reg.write8(src, value);
+        let cycles = cpu.execute_instruction(&mut ram);
+
+        assert_eq!(cycles, 2);
+        assert_eq!(cpu.reg.pc, 1);
+        assert_eq!(ram.bus_read8(addr as usize), value);
+    }
+
+    fn test_op_incR16(inst: &[u8], dst:Register)
+    {
+        let mut cpu = Cpu::new();
+        let mut ram = get_ram();
+
+        load_into_ram(&mut ram, &inst);
+        cpu.reg.write16(dst, 0x1234);
+        let cycles = cpu.execute_instruction(&mut ram);
+
+        assert_eq!(cycles, 2);
+        assert_eq!(cpu.reg.pc, 1);
+        assert_eq!(cpu.reg.read16(dst), 0x1235);
+    }
+
+    fn test_op_incR(inst: &[u8], dst:Register)
+    {
+        let mut cpu = Cpu::new();
+        let mut ram = get_ram();
+
+        load_into_ram(&mut ram, &inst);
+        cpu.reg.write8(dst, 0xff);
+        let cycles = cpu.execute_instruction(&mut ram);
+
+        assert_eq!(cycles, 1);
+        assert_eq!(cpu.reg.pc, 1);
+        assert_eq!(cpu.reg.read8(dst), 0x00);
+        assert_eq!(cpu.reg.f, Regs::ZERO_FLAG | Regs::HCARRY_FLAG);
+
+        cpu.reg.write8(dst, 0x0F);
+        cpu.reg.f = Regs::CARRY_FLAG; // instruction must not modify carry flag.
+        cpu.reg.pc = 0;
+        cpu.execute_instruction(&mut ram);
+        assert_eq!(cpu.reg.read8(dst), 0x10);
+        assert_eq!(cpu.reg.f, Regs::CARRY_FLAG | Regs::HCARRY_FLAG);
+    }
+
+    fn test_op_decR(inst: &[u8], dst:Register)
+    {
+        let mut cpu = Cpu::new();
+        let mut ram = get_ram();
+
+        load_into_ram(&mut ram, &inst);
+        let cycles = cpu.execute_instruction(&mut ram);
+
+        assert_eq!(cycles, 1);
+        assert_eq!(cpu.reg.pc, 1);
+        assert_eq!(cpu.reg.read8(dst), 0xFF);
+        assert_eq!(cpu.reg.f, Regs::HCARRY_FLAG | Regs::SUB_FLAG);
+
+        cpu.reg.pc = 0;
+        cpu.reg.write8(dst, 1);
+        cpu.execute_instruction(&mut ram);
+        assert_eq!(cpu.reg.read8(dst), 0);
+        assert_eq!(cpu.reg.f, Regs::SUB_FLAG | Regs::ZERO_FLAG);
+    }
+
+    fn test_op_ldRI(inst: &[u8], dst:Register, value:u8)
+    {
+        let mut cpu = Cpu::new();
+        let mut ram = get_ram();
+
+        load_into_ram(&mut ram, &inst);
+        let cycles = cpu.execute_instruction(&mut ram);
+
+        assert_eq!(cycles, 2);
+        assert_eq!(cpu.reg.pc, 2);
+        assert_eq!(cpu.reg.read8(dst), value);
+    }
+
+    fn test_op_addr16r16(inst: &[u8], dst:Register, src:Register )
+    {
+        let mut cpu = Cpu::new();
+        let mut ram = get_ram();
+
+        // Add HL and BC, store in HL
+        load_into_ram(&mut ram, &inst);
+        cpu.reg.write16(dst, 0xFF);
+        cpu.reg.write16(src, 0xFF);
+        
+        cpu.reg.f = 0xF0;
+        cpu.reg.write16(dst, 0xFF);
+        cpu.reg.write16(src, 0xFF);
+        let cycles = cpu.execute_instruction(&mut ram);
+
+        assert_eq!(cycles, 2);
+        assert_eq!(cpu.reg.pc, 1);
+        assert_eq!(cpu.reg.read16(dst), 0xFF + 0xFF);
+        assert_eq!(cpu.reg.f, Regs::ZERO_FLAG);
+
+        cpu.reg.pc = 0;
+        cpu.reg.f = 0;
+        cpu.reg.write16(dst, 0xFFFF);
+        cpu.reg.write16(src, 0x0001);
+        cpu.execute_instruction(&mut ram);
+
+        assert_eq!(cpu.reg.read16(dst), 0);
+        assert_eq!(cpu.reg.f, Regs::CARRY_FLAG | Regs::HCARRY_FLAG);
+    }
+
+    fn test_op_ldRM(inst: &[u8], dst:Register, src:Register, addr: u16, value: u8)
+    {
+        let mut cpu = Cpu::new();
+        let mut ram = get_ram();
+
+        load_into_ram(&mut ram, &inst);
+
+        ram.bus_write8(addr as usize, value);
+        cpu.reg.write16(src, addr);
+
+        let cycles = cpu.execute_instruction(&mut ram);
+
+        assert_eq!(cycles, 2);
+        assert_eq!(cpu.reg.pc, 1);
+        assert_eq!(cpu.reg.read8(dst), value);
+    }
+
+    fn test_op_decR16(inst: &[u8], dst:Register)
+    {
+        let mut cpu = Cpu::new();
+        let mut ram = get_ram();
+
+        load_into_ram(&mut ram, &inst);
+
+        let flags = 0xF0;
+        cpu.reg.f = flags;
+        let cycles = cpu.execute_instruction(&mut ram);
+
+        assert_eq!(cycles, 2);
+        assert_eq!(cpu.reg.pc, 1);
+        assert_eq!(cpu.reg.read16(dst), 0xFFFF);
+        assert_eq!(cpu.reg.f, flags);
+    }
+
     #[test]
     fn cpu_0x00()
     {
@@ -703,110 +915,43 @@ mod test {
     #[test]
     fn cpu_0x01()
     {
-        let mut cpu = Cpu::new();
-        let mut ram = get_ram();
         let data = [0x01, 0x01, 0x02];
-        load_into_ram(&mut ram, &data);
-
-        let cycles = cpu.execute_instruction(&mut ram);
-        assert_eq!(cycles, 3);
-        assert_eq!(cpu.reg.pc, 3);
-        assert_eq!(cpu.reg.read16(Register::BC), 0x0201);
+        test_op_ldR16I16(&data, Register::BC, 0x0201);
     }
 
     #[test]
     fn cpu_0x02()
     {
-        let mut cpu = Cpu::new();
-        let mut ram = get_ram();
-
         let data = [0x02];
-        load_into_ram(&mut ram, &data);
-
-        cpu.reg.write16(Register::BC, 0x1234);
-        cpu.reg.write8(Register::A, 0xAB);
-        let cycles = cpu.execute_instruction(&mut ram);
-
-        assert_eq!(cycles, 2);
-        assert_eq!(cpu.reg.pc, 1);
-        assert_eq!(ram.bus_read8(0x1234), 0xAB);
+        test_op_ldMR16(&data, Register::BC, Register::A, 0x1234, 0xAB)
     }
 
     #[test]
     fn cpu_0x03()
     {
-        let mut cpu = Cpu::new();
-        let mut ram = get_ram();
-
         let data = [0x03];
-        load_into_ram(&mut ram, &data);
-        cpu.reg.write16(Register::BC, 0x1234);
-        let cycles = cpu.execute_instruction(&mut ram);
-
-        assert_eq!(cycles, 2);
-        assert_eq!(cpu.reg.pc, 1);
-        assert_eq!(cpu.reg.read16(Register::BC), 0x1235);
+        test_op_incR16(&data, Register::BC);
     }
 
     #[test]
     fn cpu_0x04()
     {
-        let mut cpu = Cpu::new();
-        let mut ram = get_ram();
-
         let data = [0x04];
-        load_into_ram(&mut ram, &data);
-        cpu.reg.b = 0xFF;
-        let cycles = cpu.execute_instruction(&mut ram);
-
-        assert_eq!(cycles, 1);
-        assert_eq!(cpu.reg.pc, 1);
-        assert_eq!(cpu.reg.b, 0x00);
-        assert_eq!(cpu.reg.f, Regs::ZERO_FLAG | Regs::HCARRY_FLAG);
-
-        cpu.reg.b = 0x0F;
-        cpu.reg.f = Regs::CARRY_FLAG; // instruction must not modify carry flag.
-        cpu.reg.pc = 0;
-        cpu.execute_instruction(&mut ram);
-        assert_eq!(cpu.reg.b, 0x10);
-        assert_eq!(cpu.reg.f, Regs::CARRY_FLAG | Regs::HCARRY_FLAG);
+        test_op_incR(&data, Register::B);
     }
 
     #[test]
     fn cpu_0x05()
     {
-        let mut cpu = Cpu::new();
-        let mut ram = get_ram();
-
         let data = [0x05];
-        load_into_ram(&mut ram, &data);
-        let cycles = cpu.execute_instruction(&mut ram);
-
-        assert_eq!(cycles, 1);
-        assert_eq!(cpu.reg.pc, 1);
-        assert_eq!(cpu.reg.b, 0xFF);
-        assert_eq!(cpu.reg.f, Regs::HCARRY_FLAG | Regs::SUB_FLAG);
-
-        cpu.reg.pc = 0;
-        cpu.reg.b  = 1;
-        cpu.execute_instruction(&mut ram);
-        assert_eq!(cpu.reg.b, 0);
-        assert_eq!(cpu.reg.f, Regs::SUB_FLAG | Regs::ZERO_FLAG);
+        test_op_decR(&data, Register::B);
     }
 
     #[test]
     fn cpu_0x06()
     {
-        let mut cpu = Cpu::new();
-        let mut ram = get_ram();
-
         let data = [0x06, 0x43];
-        load_into_ram(&mut ram, &data);
-        let cycles = cpu.execute_instruction(&mut ram);
-
-        assert_eq!(cycles, 2);
-        assert_eq!(cpu.reg.pc, 2);
-        assert_eq!(cpu.reg.b, 0x43);
+        test_op_ldRI(&data, Register::B, 0x43);
     }
 
     #[test]
@@ -853,71 +998,21 @@ mod test {
     #[test]
     fn cpu_0x09()
     {
-        let mut cpu = Cpu::new();
-        let mut ram = get_ram();
-
-        // Add HL and BC, store in HL
         let data = [0x09];
-        load_into_ram(&mut ram, &data);
-        cpu.reg.write16(Register::HL, 0xFF);
-        cpu.reg.write16(Register::BC, 0xFF);
-        
-        cpu.reg.f = 0xF0;
-        cpu.reg.write16(Register::HL, 0xFF);
-        cpu.reg.write16(Register::BC, 0xFF);
-        let cycles = cpu.execute_instruction(&mut ram);
-
-        assert_eq!(cycles, 2);
-        assert_eq!(cpu.reg.pc, 1);
-        assert_eq!(cpu.reg.read16(Register::HL), 0xFF + 0xFF);
-        assert_eq!(cpu.reg.f, Regs::ZERO_FLAG);
-
-        cpu.reg.pc = 0;
-        cpu.reg.f = 0;
-        cpu.reg.write16(Register::HL, 0xFFFF);
-        cpu.reg.write16(Register::BC, 0x0001);
-        cpu.execute_instruction(&mut ram);
-
-        assert_eq!(cpu.reg.read16(Register::HL), 0);
-        assert_eq!(cpu.reg.f, Regs::CARRY_FLAG | Regs::HCARRY_FLAG);
+        test_op_addr16r16(&data, Register::HL, Register::BC);
     }
 
     #[test]
-    fn cpu_0x0A() {
-        let mut cpu = Cpu::new();
-        let mut ram = get_ram();
-
+    fn cpu_0x0A() 
+    {
         let instruction = [0x0A];
-        load_into_ram(&mut ram, &instruction);
-
-        let address = 0xABCD;
-        let expected_value = 143;
-        ram.bus_write8(address, expected_value);
-        cpu.reg.write16(Register::BC, address as u16);
-
-        let cycles = cpu.execute_instruction(&mut ram);
-
-        assert_eq!(cycles, 2);
-        assert_eq!(cpu.reg.pc, 1);
-        assert_eq!(cpu.reg.a, expected_value);
+        test_op_ldRM(&instruction, Register::A, Register::BC, 0xABCD, 143);
     }
 
     #[test]
     fn cpu_0x0B() {
-        let mut cpu = Cpu::new();
-        let mut ram = get_ram();
-
         let instruction = [0x0B];
-        load_into_ram(&mut ram, &instruction);
-
-        let flags = 0xF0;
-        cpu.reg.f = flags;
-        let cycles = cpu.execute_instruction(&mut ram);
-
-        assert_eq!(cycles, 2);
-        assert_eq!(cpu.reg.pc, 1);
-        assert_eq!(cpu.reg.read16(Register::BC), 0xFFFF);
-        assert_eq!(cpu.reg.f, flags);
+        test_op_decR16(&instruction, Register::BC);
     }
 
     #[test]
@@ -1005,5 +1100,185 @@ mod test {
 
         assert_eq!(cpu.reg.f, 0);
         assert_eq!(cpu.reg.a, 0x55);
+    }
+
+    #[test]
+    #[ignore]
+    fn cpu_0x10()
+    {
+        // TODO test stop instruction
+    }
+
+    #[test]
+    fn cpu_0x11()
+    {
+        let data = [0x11, 0xFF, 0xEE];
+        test_op_ldR16I16(&data, Register::DE, 0xEEFF);
+    }
+
+    #[test]
+    fn cpu_0x12()
+    {
+        let data = [0x12];
+        test_op_ldMR16(&data, Register::DE, Register::A, 0x4321, 0x99);
+    }
+
+    #[test]
+    fn cpu_0x13()
+    {
+        let data = [0x13];
+        test_op_incR16(&data, Register::DE);
+    }
+
+    #[test]
+    fn cpu_0x14()
+    {
+        let data = [0x14];
+        test_op_incR(&data, Register::D);
+    }
+
+    #[test]
+    fn cpu_0x15()
+    {
+        let data = [0x15];
+        test_op_decR(&data, Register::D);
+    }
+
+    #[test]
+    fn cpu_0x16()
+    {
+        let data = [0x16, 0xBE];
+        test_op_ldRI(&data, Register::D, 0xBE);
+    }
+
+    #[test]
+    fn cpu_0x17()
+    {
+        let mut cpu = Cpu::new();
+        let mut ram = get_ram();
+        let data = [0x17];
+        load_into_ram(&mut ram, &data);
+
+        // Set A to alternating bit pattern, set carry flag.
+        // Carry flag is set, so bit zero must be set after operation.
+        // Entire flags register should be cleared after operation.
+        cpu.reg.a = 0b_0101_0101;
+        cpu.reg.f = Regs::ZERO_FLAG | Regs::SUB_FLAG | Regs::CARRY_FLAG | Regs::HCARRY_FLAG;
+
+        let cycles = cpu.execute_instruction(&mut ram);
+
+        assert_eq!(cycles, 1);
+        assert_eq!(cpu.reg.pc, 1);
+        assert_eq!(cpu.reg.a, 0b1010_1011);
+        assert_eq!(cpu.reg.f, 0);
+
+        // Set A to an alternating bit pattern, clear carry flag.
+        // MSB is 1 so carry flag must be set.
+        cpu.reg.a = 0b_1010_1010;
+        cpu.reg.f = 0;
+        cpu.reg.pc = 0;
+
+        cpu.execute_instruction(&mut ram);
+
+        assert_eq!(cpu.reg.a, 0b0101_0100);
+        assert_eq!(cpu.reg.f, Regs::CARRY_FLAG);
+    }
+
+    #[test]
+    fn cpu_0x18()
+    {
+        let mut cpu = Cpu::new();
+        let mut ram = get_ram();
+
+        let inst_addr = 0x7E;
+
+        // Jump to 127 bytes after instruction;
+        let inst = [0x18, 0x7F];
+        ram.bus_write8(inst_addr, inst[0]);
+        ram.bus_write8(inst_addr + 1, inst[1]);
+
+        cpu.reg.pc = inst_addr as u16;
+        let cycles = cpu.execute_instruction(&mut ram);
+
+        assert_eq!(cycles, 3);
+        assert_eq!(cpu.reg.pc, 0x7E + 2 + 0x7F);
+
+        // write a -128 byte as the jump offset.
+        ram.bus_write8(inst_addr+1, 0x80);
+        cpu.reg.pc = inst_addr as u16;
+
+        cpu.execute_instruction(&mut ram);
+
+        assert_eq!(cpu.reg.pc, 0x7E + 2 - 128);
+    }
+
+    #[test]
+    fn cpu_0x19()
+    {
+        let inst = [0x19];
+        test_op_addr16r16(&inst, Register::HL, Register::DE);
+    }
+
+    #[test]
+    fn cpu_0x1A()
+    {
+        let inst = [0x1A];
+        test_op_ldRM(&inst, Register::A, Register::DE, 0xBEAF, 0xBC);
+    }
+
+    #[test]
+    fn cpu_0x1B()
+    {
+        let inst = [0x1B];
+        test_op_decR16(&inst, Register::DE);
+    }
+
+    #[test]
+    fn cpu_0x1C()
+    {
+        let inst = [0x1C];
+        test_op_incR(&inst, Register::E);
+    }
+
+    #[test]
+    fn cpu_0x1D()
+    {
+        let inst = [0x1D];
+        test_op_decR(&inst, Register::E);
+    }
+
+    #[test]
+    fn cpu_0x1E()
+    {
+        let inst = [0x1E, 0xFE];
+        test_op_ldRI(&inst, Register::E, 0xFE);
+    }
+
+    #[test]
+    fn cpu_0x1F()
+    {
+        let inst = [0x1F];
+
+        let mut cpu = Cpu::new();
+        let mut ram = get_ram();
+
+        load_into_ram(&mut ram, &inst);
+        cpu.reg.f = 0xF0;
+        cpu.reg.a = 0b1010_1010;
+
+        let cycles = cpu.execute_instruction(&mut ram);
+
+        assert_eq!(cycles, 1);
+        assert_eq!(cpu.reg.pc, 1);
+        assert_eq!(cpu.reg.a, 0b1101_0101);
+        assert_eq!(cpu.reg.f, 0);
+
+        cpu.reg.pc = 0;
+        cpu.reg.a = 0b0101_0101;
+        cpu.reg.f = 0;
+        cpu.execute_instruction(&mut ram);
+
+        assert_eq!(cpu.reg.a, 0b0010_1010);
+        assert_eq!(cpu.reg.f, Regs::CARRY_FLAG);
     }
 }
