@@ -5,6 +5,7 @@ use crate::bus::{BusRW};
 #[allow(dead_code)]
 #[derive(Debug)]
 #[derive(Clone, Copy)]
+#[derive(PartialEq)]
 enum Register {
     A, F,
     B, C,
@@ -299,6 +300,7 @@ impl Cpu {
             // // Add two 16 bit registers.
             AddR16R16{dst, src} => {
                 let initial = self.reg.read16(*dst);
+                let addend = self.reg.read16(*src);
                 let result = initial.wrapping_add(self.reg.read16(*src));
                 self.reg.write16(*dst, result);
 
@@ -306,7 +308,7 @@ impl Cpu {
                 self.reg.f &= Regs::ZERO_FLAG;
 
                 // Half carry only occurs on most significant byte.
-                if (initial ^ result) & 0x1000 > 0 {
+                if (initial ^ addend) & 0x1000 != result & 0x1000 {
                     self.reg.f = self.reg.f | Regs::HCARRY_FLAG;
                 }
                 // Set carry flag if needed.
@@ -353,6 +355,23 @@ impl Cpu {
                 }
             },
 
+            LdMR16Mv{add} => {
+                let addr = self.reg.read16(Register::HL);
+                bus.bus_write8(addr as usize, self.reg.a);
+                self.reg.write16(Register::HL, addr.wrapping_add(*add as i16 as u16));
+            }
+
+            LdRMMv{add} => {
+                let addr = self.reg.read16(Register::HL);
+                self.reg.a = bus.bus_read8(addr as usize);
+                self.reg.write16(Register::HL, addr.wrapping_add(*add as i16 as u16));
+            },
+
+            Cpl => {
+                self.reg.a ^= 0xFF;
+                self.reg.f |= Regs::SUB_FLAG | Regs::HCARRY_FLAG;
+            }
+
             _ => panic!("not implemented")
         }
     }
@@ -382,6 +401,10 @@ enum Operation {
     LdR16I16{dst:Register},
     // Store a register into memory pointed to by 16bit register.
     LdMR16{dst:Register, src:Register},
+    // Store the A register into memory pointed to by the HL register, and modify HL.
+    LdMR16Mv{add:i8},
+    // Read into the A register from memory pointed to by the HL register, and modify HL.
+    LdRMMv{add:i8},
     // Load a register with an 8 bit immediate value.
     LdRI{dst:Register},
     // Save a 16 bit register to an immediate address.
@@ -408,6 +431,12 @@ enum Operation {
 
     // Add two 16 bit registers.
     AddR16R16{dst:Register, src:Register},
+
+    // Correct binary coded decimal.
+    Daa,
+
+    // One's compliment of register A.
+    Cpl,
 
     // Jump relative
     Jr{cond: JumpCondition},
@@ -489,23 +518,38 @@ const INSTRUCTION_TABLE: [Instruction;256] = [
     Instruction{op:Operation::Rra, length:1, cycles:1},
 
     // 0x2X
-    // 0x20 JR NZ, s8
+    // 0x20 Jr NZ, s8
     Instruction{op:Operation::Jr{cond: JumpCondition::Nz}, length:2, cycles:2},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
+    // 0x21 Ld HL, d16
+    Instruction{op:Operation::LdR16I16{dst: Register::HL}, length:3, cycles:3},
+    // 0x22 Ld (HL+), A
+    Instruction{op:Operation::LdMR16Mv{add:1}, length:1, cycles:2},
+    // 0x23 Inc HL
+    Instruction{op:Operation::IncR16{dst: Register::HL}, length:1, cycles:2},
+    // 0x24 Inc H
+    Instruction{op:Operation::IncR{dst: Register::H}, length:1, cycles:1},
+    // 0x25 Dec H
+    Instruction{op:Operation::DecR{dst: Register::H}, length:1, cycles:1},
+    // 0x26 Ld H, d8
+    Instruction{op:Operation::LdRI{dst: Register::H}, length:2, cycles:2},
+    // 0x27 Daa
+    Instruction{op:Operation::Daa, length:1, cycles:1},
+    // 0x28 Jr Z, s8
+    Instruction{op:Operation::Jr{cond:JumpCondition::Z}, length:2, cycles:2},
+    // 0x29 Add HL, HL
+    Instruction{op:Operation::AddR16R16{dst:Register::HL, src:Register::HL}, length:1, cycles:2},
+    // 0x2A Ld A (HL+)
+    Instruction{op:Operation::LdRMMv{add:1}, length:1, cycles:2},
+    // 0x2B Dec HL
+    Instruction{op:Operation::DecR16{dst:Register::HL}, length:1, cycles:2},
+    // 0x2C Inc L
+    Instruction{op:Operation::IncR{dst:Register::L}, length:1, cycles:1},
+    // 0x2D Dec L
+    Instruction{op:Operation::DecR{dst:Register::L}, length:1, cycles:1},
+    // 0x2E Ld L, d8
+    Instruction{op:Operation::LdRI{dst:Register::L}, length:2, cycles:2},
+    // 0x2F Cpl A
+    Instruction{op:Operation::Cpl, length:1, cycles:1},
 
     // 0x3X
     Instruction{op:Operation::Nop, length:1, cycles:1},
@@ -882,10 +926,16 @@ mod test {
         cpu.reg.pc = 0;
         cpu.reg.f = 0;
         cpu.reg.write16(dst, 0xFFFF);
-        cpu.reg.write16(src, 0x0001);
-        cpu.execute_instruction(&mut ram);
 
-        assert_eq!(cpu.reg.read16(dst), 0);
+        // Special case when source and destination registers are the same
+        let result = 
+            if src != dst {
+                cpu.reg.write16(src, 0x0001);
+                0
+            } else {0xFFFE};
+        
+        cpu.execute_instruction(&mut ram);
+        assert_eq!(cpu.reg.read16(dst), result);
         assert_eq!(cpu.reg.f, Regs::CARRY_FLAG | Regs::HCARRY_FLAG);
     }
 
@@ -1303,5 +1353,187 @@ mod test {
 
         assert_eq!(cpu.reg.a, 0b0010_1010);
         assert_eq!(cpu.reg.f, Regs::CARRY_FLAG);
+    }
+
+    #[test]
+    fn cpu_0x20()
+    {
+        // JR NZ, 3
+        let inst = [0x20, 3];
+
+        let mut cpu = Cpu::new();
+        let mut ram = get_ram();
+        load_into_ram(&mut ram, &inst);
+
+        cpu.reg.f = 0; // clear all flags.
+        let cycles = cpu.execute_instruction(&mut ram);
+
+        assert_eq!(cycles, 3);
+        assert_eq!(cpu.reg.pc, 5); // branch was taken because zero flag was false.
+
+        cpu.reg.f = Regs::ZERO_FLAG;
+        cpu.reg.pc = 0;
+        let cycles = cpu.execute_instruction(&mut ram);
+
+        assert_eq!(cycles, 2);
+        assert_eq!(cpu.reg.pc, 2); // branch not taken because zero flag was true;
+    }
+
+    #[test]
+    fn cpu_0x21()
+    {
+        // Ld HL, 0xCAFE
+        let inst = [0x21, 0xFE, 0xCA];
+        test_op_ldR16I16(&inst, Register::HL, 0xCAFE);
+    }
+
+    #[test]
+    fn cpu_0x22()
+    {
+        // Ld (HL+), A
+        let inst = [0x22];
+        let mut cpu = Cpu::new();
+        let mut ram = get_ram();
+        load_into_ram(&mut ram, &inst);
+        
+        cpu.reg.write16(Register::HL, 0x1234);
+        cpu.reg.a = 91;
+        let cycles = cpu.execute_instruction(&mut ram);
+
+        assert_eq!(cycles, 2);
+        assert_eq!(cpu.reg.pc, 1);
+        assert_eq!(cpu.reg.read16(Register::HL), 0x1235);
+        assert_eq!(ram.bus_read8(0x1234), 91);
+    }
+
+    #[test]
+    fn cpu_0x23()
+    {
+        // Inc HL
+        let inst = [0x23];
+        test_op_incR16(&inst, Register::HL);
+    }
+
+    #[test]
+    fn cpu_0x24()
+    {
+        // Inc H
+        let inst = [0x24];
+        test_op_incR(&inst, Register::H);
+    }
+
+    #[test]
+    fn cpu_0x25()
+    {
+        // Dec H
+        test_op_decR(&[0x25], Register::H);
+    }
+
+    #[test]
+    fn cpu_0x26()
+    {
+        // Ld H, d8
+        test_op_ldRI(&[0x26, 0x23], Register::H, 0x23);
+    }
+
+    #[test]
+    #[ignore]
+    fn cpu_0x27()
+    {
+        //Daa
+        assert_eq!(1, 2);
+    }
+
+    #[test]
+    fn cpu_0x28()
+    {
+        // Jr Z, s8
+        let inst = [0x28, -2i8 as u8];
+        let mut ram = get_ram();
+        let mut cpu = Cpu::new();
+        load_into_ram(&mut ram, &inst);
+
+        cpu.reg.f = Regs::ZERO_FLAG; // Branch is taken
+        let cycles = cpu.execute_instruction(&mut ram);
+
+        assert_eq!(cycles, 3);
+        assert_eq!(cpu.reg.pc, 0); // branch taken, jump back 2 yeilds zero.
+
+        cpu.reg.f = 0; // Branch is not taken
+        let cycles = cpu.execute_instruction(&mut ram);
+
+        assert_eq!(cycles, 2);
+        assert_eq!(cpu.reg.pc, 2); // branch was not taken, no jump.
+    }
+
+    #[test]
+    fn cpu_0x29()
+    {
+        test_op_addr16r16(&[0x29], Register::HL, Register::HL);
+    }
+
+    #[test]
+    fn cpu_0x2A()
+    {
+        // Ld A, (HL+)
+        let inst = [0x2A];
+        let mut cpu = Cpu::new();
+        let mut ram = get_ram();
+        load_into_ram(&mut ram, &inst);
+        
+        cpu.reg.write16(Register::HL, 0x1234);
+        ram.bus_write8(0x1234, 91);
+        let cycles = cpu.execute_instruction(&mut ram);
+
+        assert_eq!(cycles, 2);
+        assert_eq!(cpu.reg.pc, 1);
+        assert_eq!(cpu.reg.read16(Register::HL), 0x1235);
+        assert_eq!(cpu.reg.a, 91);
+    }
+
+    #[test]
+    fn cpu_0x2B()
+    {
+        // Dec HL
+        test_op_decR16(&[0x2B], Register::HL);
+    }
+
+    #[test]
+    fn cpu_0x2C()
+    {
+        // Inc L
+        test_op_incR(&[0x2C], Register::L);
+    }
+
+    #[test]
+    fn cpu_0x2D()
+    {
+        // Dec L
+        test_op_decR(&[0x2D], Register::L);
+    }
+
+    #[test]
+    fn cpu_0x2E()
+    {
+        // Ld L, d8
+        test_op_ldRI(&[0x2E, 233], Register::L, 233);
+    }
+
+    #[test]
+    fn cpu_0x2F()
+    {
+        // Cpl
+        let inst = [0x2F];
+        let mut cpu = Cpu::new();
+        let mut ram = get_ram();
+        load_into_ram(&mut ram, &inst);
+
+        cpu.reg.a = 0x55;
+        let cycles = cpu.execute_instruction(&mut ram);
+
+        assert_eq!(cpu.reg.a, 0xAA);
+        assert_eq!(cpu.reg.f, Regs::SUB_FLAG | Regs::HCARRY_FLAG);
+        assert_eq!(cpu.reg.pc, 1);
+        assert_eq!(cycles, 1);
     }
 }
