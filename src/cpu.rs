@@ -100,15 +100,18 @@ impl Regs {
             Register::BC => {
                 self.b = (value >> 8) as u8;
                 self.c = value as u8;
-            }
+            },
             Register::DE => {
                 self.d = (value >> 8) as u8;
                 self.e = value as u8;
-            }
+            },
             Register::HL => {
                 self.h = (value >> 8) as u8;
                 self.l = value as u8;
-            }
+            },
+            Register::SP => {
+                self.sp = value;
+            },
             _ => panic!("Invalid 8bit register write of {}=>{:?}", value, reg)
         }
     }
@@ -249,6 +252,25 @@ impl Cpu {
                     self.reg.f = self.reg.f | Regs::ZERO_FLAG;
                 }
             },
+
+            // Increment memory pointed to by register.
+            IncM{dst} => {
+                let addr = self.reg.read16(*dst) as usize;
+                let initial = bus.bus_read8(addr);
+                let result = initial.wrapping_add(1);
+                bus.bus_write8(addr, result);
+
+                self.reg.f &= Regs::CARRY_FLAG;
+
+                // If there was a half carry
+                if (initial ^ result) & 0x10 > 0 {
+                    self.reg.f = self.reg.f | Regs::HCARRY_FLAG;
+                }
+                // If the result was zero
+                if result == 0 {
+                    self.reg.f = self.reg.f | Regs::ZERO_FLAG;
+                }
+            },
             
             // Decrement an 8 bit register
             DecR{dst} => {
@@ -274,6 +296,28 @@ impl Cpu {
             DecR16{dst} => {
                 let i = self.reg.read16(*dst).wrapping_sub(1);
                 self.reg.write16(*dst, i);
+            },
+
+            // Decrement a memory location addressed by 16 bit register dst
+            DecM{dst} => {
+                let addr = self.reg.read16(*dst) as usize;
+                let initial = bus.bus_read8(addr);
+                let result = initial.wrapping_sub(1);
+                bus.bus_write8(addr, result);
+
+                // Preserve the carry flaga and set the sub flag
+                self.reg.f &= Regs::CARRY_FLAG;
+                self.reg.f |= Regs::SUB_FLAG;
+
+                // Set zero flag if needed.
+                if result == 0 {
+                    self.reg.f |= Regs::ZERO_FLAG
+                }
+
+                // set the half carry flag if needed.
+                if  (initial ^ result) & 0x10 > 0 {
+                    self.reg.f |= Regs::HCARRY_FLAG
+                }
             },
 
             // Rotate A once to the left, and carry bit 7 into the carry flag.
@@ -345,7 +389,7 @@ impl Cpu {
                     JumpCondition::Z =>  self.reg.f & Regs::ZERO_FLAG  != 0,
                     JumpCondition::Nz => self.reg.f & Regs::ZERO_FLAG  == 0,
                     JumpCondition::C =>  self.reg.f & Regs::CARRY_FLAG != 0,
-                    JumpCondition::Nc => self.reg.f & Regs::CARRY_FLAG != 0,
+                    JumpCondition::Nc => self.reg.f & Regs::CARRY_FLAG == 0,
                 };
                 if take_branch {
                     // get the signed jump offset, then add it to the program counter.
@@ -367,10 +411,25 @@ impl Cpu {
                 self.reg.write16(Register::HL, addr.wrapping_add(*add as i16 as u16));
             },
 
+            LdMI{dst} => {
+                let addr= self.reg.read16(*dst) as usize;
+                bus.bus_write8(addr, data[1]);
+            },
+
             Cpl => {
                 self.reg.a ^= 0xFF;
                 self.reg.f |= Regs::SUB_FLAG | Regs::HCARRY_FLAG;
-            }
+            },
+
+            Scf => {
+                self.reg.f &= Regs::ZERO_FLAG;
+                self.reg.f |= Regs::CARRY_FLAG;
+            },
+
+            Ccf => {
+                self.reg.f &= Regs::ZERO_FLAG | Regs::CARRY_FLAG;
+                self.reg.f ^= Regs::CARRY_FLAG;
+            },
 
             _ => panic!("not implemented")
         }
@@ -409,16 +468,22 @@ enum Operation {
     LdRI{dst:Register},
     // Save a 16 bit register to an immediate address.
     LdI16R16{src:Register},
+    // Store an 8 bit immediate into memory pointed to by a 16 bit register.
+    LdMI{dst:Register},
 
     // Increment a 16 bit register.
     IncR16{dst:Register},
     // Increment an 8 bit register.
     IncR{dst:Register},
+    // Increment a memory location addressed by 16 bit register.
+    IncM{dst:Register},
     
     // Decrement an 8 bit register
     DecR{dst:Register},
     // Decrement a 16 bit register
     DecR16{dst:Register},
+    // Decrement a memory location addressed by a 16 bit register
+    DecM{dst:Register},
 
     // Rotate A once to the left, and carry bit 7 into the carry flag and bit zero.
     Rlca,
@@ -437,6 +502,10 @@ enum Operation {
 
     // One's compliment of register A.
     Cpl,
+    // Set carry flag.
+    Scf,
+    // Clear carry flag
+    Ccf,
 
     // Jump relative
     Jr{cond: JumpCondition},
@@ -552,22 +621,38 @@ const INSTRUCTION_TABLE: [Instruction;256] = [
     Instruction{op:Operation::Cpl, length:1, cycles:1},
 
     // 0x3X
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
+    // 0x30 Jr NC, s8
+    Instruction{op:Operation::Jr{cond:JumpCondition::Nc}, length:2, cycles:2},
+    // 0x31 Ld SP, d16
+    Instruction{op:Operation::LdR16I16{dst: Register::SP}, length:3, cycles:3},
+    // 0x32 Ld (HL-), A
+    Instruction{op:Operation::LdMR16Mv{add: -1}, length:1, cycles:2},
+    // 0x33 Inc SP
+    Instruction{op:Operation::IncR16{dst: Register::SP}, length:1, cycles:2},
+    // 0x34 Inc (HL)
+    Instruction{op:Operation::IncM{dst:Register::HL}, length:1, cycles:3},
+    // 0x35 Dec (HL)
+    Instruction{op:Operation::DecM{dst:Register::HL}, length:1, cycles:3},
+    // 0x36 Ld (HL), d8
+    Instruction{op:Operation::LdMI{dst:Register::HL}, length:2, cycles:3},
+    // 0x37 Scf
+    Instruction{op:Operation::Scf, length:1, cycles:1},
+    // 0x38 Jr C, s8
+    Instruction{op:Operation::Jr{cond:JumpCondition::C}, length:2, cycles:2},
+    // 0x39 Add HL, SP
+    Instruction{op:Operation::AddR16R16{dst:Register::HL, src:Register::SP}, length:1, cycles:2},
+    // 0x3A Ld A, (HL-)
+    Instruction{op:Operation::LdRMMv{add:-1}, length:1, cycles:2},
+    // 0x3B Dec SP
+    Instruction{op:Operation::DecR16{dst:Register::SP}, length:1, cycles:2},
+    // 0x3C Inc A
+    Instruction{op:Operation::IncR{dst:Register::A}, length:1, cycles:1},
+    // 0x3D Dec A
+    Instruction{op:Operation::DecR{dst:Register::A}, length:1, cycles:1},
+    // 0x3E Ld A, d8
+    Instruction{op:Operation::LdRI{dst:Register::A}, length:2, cycles:2},
+    // 0x3F Ccf
+    Instruction{op:Operation::Ccf, length:1, cycles:1},
 
     // 0x4X
     Instruction{op:Operation::Nop, length:1, cycles:1},
@@ -1535,5 +1620,248 @@ mod test {
         assert_eq!(cpu.reg.f, Regs::SUB_FLAG | Regs::HCARRY_FLAG);
         assert_eq!(cpu.reg.pc, 1);
         assert_eq!(cycles, 1);
+    }
+
+    #[test]
+    fn cpu_0x30()
+    {
+        // Jr NC, s8
+        let mut cpu = Cpu::new();
+        let mut ram = get_ram();
+        load_into_ram(&mut ram, &[0x30, -1i8 as u8]);
+
+        // All flags cleared, branch is taken.
+        cpu.reg.f = 0;
+        let cycles = cpu.execute_instruction(&mut ram);
+        assert_eq!(cpu.reg.pc, 1);
+        assert_eq!(cycles, 3);
+
+        // Carry flag set, branch is not taken.
+        cpu = Cpu::new();
+        cpu.reg.f = Regs::CARRY_FLAG;
+        let cycles = cpu.execute_instruction(&mut ram);
+        assert_eq!(cpu.reg.pc, 2);
+        assert_eq!(cycles, 2);
+    }
+
+    #[test]
+    fn cpu_0x31()
+    {
+        // LD SP, d16
+        test_op_ldR16I16(&[0x31, 0xAA, 0xBB], Register::SP, 0xBBAA);
+    }
+
+    #[test]
+    fn cpu_0x32()
+    {
+        // LD (HL-), A
+        let mut cpu = Cpu::new();
+        let mut ram = get_ram();
+        load_into_ram(&mut ram, &[0x32]);
+        
+        cpu.reg.write16(Register::HL, 0x1234);
+        cpu.reg.a = 91;
+        let cycles = cpu.execute_instruction(&mut ram);
+
+        assert_eq!(cycles, 2);
+        assert_eq!(cpu.reg.pc, 1);
+        assert_eq!(cpu.reg.read16(Register::HL), 0x1233);
+        assert_eq!(ram.bus_read8(0x1234), 91);
+    }
+
+    #[test]
+    fn cpu_0x33()
+    {
+        // Inc SP
+        test_op_incR16(&[0x33], Register::SP);
+    }
+
+    #[test]
+    fn cpu_0x34()
+    {
+        // Inc (HL)
+        let mut cpu = Cpu::new();
+        let mut ram = get_ram();
+        load_into_ram(&mut ram, &[0x34]);
+
+        let address = 0x1000;
+        ram.bus_write16(address, 0xFF);
+        cpu.reg.f = 0xF0;
+        cpu.reg.write16(Register::HL, address as u16);
+
+        let cycles = cpu.execute_instruction(&mut ram);
+        assert_eq!(cycles, 3);
+        assert_eq!(cpu.reg.pc, 1);
+        assert_eq!(ram.bus_read8(address), 0);
+        assert_eq!(cpu.reg.f, Regs::HCARRY_FLAG | Regs::CARRY_FLAG | Regs::ZERO_FLAG);
+
+        cpu.reg.pc = 0;
+        cpu.execute_instruction(&mut ram);
+        assert_eq!(cpu.reg.f, Regs::CARRY_FLAG); // carry still unchanged from before.
+        assert_eq!(ram.bus_read8(address), 0x01);
+
+        cpu.reg.pc = 0;
+        cpu.reg.f = 0;
+        ram.bus_write8(address, 0x0F);
+        cpu.execute_instruction(&mut ram);
+        assert_eq!(cpu.reg.f, Regs::HCARRY_FLAG); // Half carry set
+        assert_eq!(ram.bus_read8(address), 0x10);
+    }
+
+    #[test]
+    fn cpu_0x35()
+    {
+        // Dec (HL)
+        let mut cpu = Cpu::new();
+        let mut ram = get_ram();
+        load_into_ram(&mut ram, &[0x35]);
+
+        let address = 0x1001;
+        ram.bus_write16(address, 0);
+        cpu.reg.f = Regs::CARRY_FLAG;
+        cpu.reg.write16(Register::HL, address as u16);
+
+        let cycles = cpu.execute_instruction(&mut ram);
+        assert_eq!(cycles, 3);
+        assert_eq!(cpu.reg.pc, 1);
+        assert_eq!(ram.bus_read8(address), 0xFF);
+        assert_eq!(cpu.reg.f, Regs::HCARRY_FLAG | Regs::CARRY_FLAG | Regs::SUB_FLAG);
+
+        cpu.reg.pc = 0;
+        cpu.reg.f = 0;
+        ram.bus_write8(address, 0x01);
+        cpu.execute_instruction(&mut ram);
+        assert_eq!(cpu.reg.f, Regs::SUB_FLAG | Regs::ZERO_FLAG);
+        assert_eq!(ram.bus_read8(address), 0x00);
+    }
+
+    #[test]
+    fn cpu_0x36()
+    {
+        // LD (HL), d8
+        let mut cpu = Cpu::new();
+        let mut ram = get_ram();
+        let value = 99u8;
+        let address = 0xFF;
+        load_into_ram(&mut ram, &[0x36, value]);
+
+        cpu.reg.write16(Register::HL, address);
+        let cycles = cpu.execute_instruction(&mut ram);
+
+        assert_eq!(cycles, 3);
+        assert_eq!(cpu.reg.pc, 2);
+        assert_eq!(ram.bus_read8(address as usize), value);
+    }
+
+    #[test]
+    fn cpu_0x37()
+    {
+        // SCF
+        let mut cpu = Cpu::new();
+        let mut ram = get_ram();
+        load_into_ram(&mut ram, &[0x37]);
+        
+        cpu.reg.f = Regs::HCARRY_FLAG | Regs::ZERO_FLAG | Regs::SUB_FLAG;
+        let cycles = cpu.execute_instruction(&mut ram);
+
+        assert_eq!(cycles, 1);
+        assert_eq!(cpu.reg.f, Regs::CARRY_FLAG | Regs::ZERO_FLAG);
+    }
+
+    #[test]
+    fn cpu_0x38()
+    {
+        // Jr C, i8
+        let mut cpu = Cpu::new();
+        let mut ram = get_ram();
+        load_into_ram(&mut ram, &[0x38, 4]);
+
+        // Branch was not taken
+        cpu.reg.f = 0;
+        let cycles = cpu.execute_instruction(&mut ram);
+
+        assert_eq!(cycles, 2);
+        assert_eq!(cpu.reg.pc, 2);
+
+        // Branch was taken
+        cpu.reg.f = Regs::CARRY_FLAG;
+        cpu.reg.pc = 0;
+        let cycles = cpu.execute_instruction(&mut ram);
+        
+        assert_eq!(cycles, 3);
+        assert_eq!(cpu.reg.pc, 6);
+    }
+
+    #[test]
+    fn cpu_0x39()
+    {
+        // ADD HL, SP
+        test_op_addr16r16(&[0x39], Register::HL, Register::SP);
+    }
+
+    #[test]
+    fn cpu_0x3A()
+    {
+        // LD A (HL-)
+        let mut cpu = Cpu::new();
+        let mut ram = get_ram();
+        load_into_ram(&mut ram, &[0x3A]);
+        
+        let address = 0xFF;
+        let value = 0x91;
+        cpu.reg.write16(Register::HL, address);
+        ram.bus_write8(address as usize, value);
+        let cycles = cpu.execute_instruction(&mut ram);
+
+        assert_eq!(cycles, 2);
+        assert_eq!(cpu.reg.pc, 1);
+        assert_eq!(cpu.reg.read16(Register::HL), address - 1);
+        assert_eq!(cpu.reg.a, value);
+    }
+
+    #[test]
+    fn cpu_0x3B()
+    {
+        // Dec SP
+        test_op_decR16(&[0x3B], Register::SP);
+    }
+
+    #[test]
+    fn cpu_0x3C()
+    {
+        // Inc A
+        test_op_incR(&[0x3C], Register::A);
+    }
+
+    #[test]
+    fn cpu_0x3D()
+    {
+        // Dec A
+        test_op_decR(&[0x3D], Register::A);
+    }
+
+    #[test]
+    fn cpu_0x3E()
+    {
+        test_op_ldRI(&[0x3E, 0x01], Register::A, 0x01);
+    }
+
+    #[test]
+    fn cpu_0x3F()
+    {
+        let mut cpu = Cpu::new();
+        let mut ram = get_ram();
+        load_into_ram(&mut ram, &[0x3F]);
+
+        cpu.reg.f = 0xFF;
+        let cycles = cpu.execute_instruction(&mut ram);
+        assert_eq!(cycles, 1);
+        assert_eq!(cpu.reg.pc, 1);
+        assert_eq!(cpu.reg.f, Regs::ZERO_FLAG);
+
+        cpu.reg.pc = 0;
+        cpu.reg.f = 0x00;
+        cpu.execute_instruction(&mut ram);
+        assert_eq!(cpu.reg.f, Regs::CARRY_FLAG);
     }
 }
