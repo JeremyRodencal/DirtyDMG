@@ -655,22 +655,38 @@ const INSTRUCTION_TABLE: [Instruction;256] = [
     Instruction{op:Operation::Ccf, length:1, cycles:1},
 
     // 0x4X
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
+    // 0x40 Ld B, B
+    Instruction{op:Operation::LdRR{dst:Register::B, src:Register::B}, length:1, cycles:1},
+    // 0x41 Ld B, C
+    Instruction{op:Operation::LdRR{dst:Register::B, src:Register::C}, length:1, cycles:1},
+    // 0x42 Ld B, D
+    Instruction{op:Operation::LdRR{dst:Register::B, src:Register::D}, length:1, cycles:1},
+    // 0x43 Ld B, E
+    Instruction{op:Operation::LdRR{dst:Register::B, src:Register::E}, length:1, cycles:1},
+    // 0x44 Ld B, H
+    Instruction{op:Operation::LdRR{dst:Register::B, src:Register::H}, length:1, cycles:1},
+    // 0x45 Ld B, L
+    Instruction{op:Operation::LdRR{dst:Register::B, src:Register::L}, length:1, cycles:1},
+    // 0x46 Ld B, (HL)
+    Instruction{op:Operation::LdRM{dst:Register::B, src:Register::HL}, length:1, cycles:2},
+    // 0x47 Ld B, A
+    Instruction{op:Operation::LdRR{dst:Register::B, src:Register::A}, length:1, cycles:1},
+    // 0x48 Ld C, B
+    Instruction{op:Operation::LdRR{dst:Register::C, src:Register::B}, length:1, cycles:1},
+    // 0x49 Ld C, C
+    Instruction{op:Operation::LdRR{dst:Register::C, src:Register::C}, length:1, cycles:1},
+    // 0x4A Ld C, D
+    Instruction{op:Operation::LdRR{dst:Register::C, src:Register::D}, length:1, cycles:1},
+    // 0x4B Ld C, E
+    Instruction{op:Operation::LdRR{dst:Register::C, src:Register::E}, length:1, cycles:1},
+    // 0x4C Ld C, H
+    Instruction{op:Operation::LdRR{dst:Register::C, src:Register::H}, length:1, cycles:1},
+    // 0x4D Ld C, L
+    Instruction{op:Operation::LdRR{dst:Register::C, src:Register::L}, length:1, cycles:1},
+    // 0x4E Ld C, (HL)
+    Instruction{op:Operation::LdRM{dst:Register::C, src:Register::HL}, length:1, cycles:2},
+    // 0x4F Ld C, A
+    Instruction{op:Operation::LdRR{dst:Register::C, src:Register::A}, length:1, cycles:1},
 
     // 0x5X
     Instruction{op:Operation::Nop, length:1, cycles:1},
@@ -917,6 +933,24 @@ mod test {
         assert_eq!(cycles, 2);
         assert_eq!(cpu.reg.pc, 1);
         assert_eq!(ram.bus_read8(addr as usize), value);
+    }
+
+    fn test_op_ldRR(inst: &[u8], dst:Register, src:Register)
+    {
+        let mut cpu = Cpu::new();
+        let mut ram = get_ram();
+
+        load_into_ram(&mut ram, &inst);
+
+        let value = 0x55;
+        cpu.reg.write8(dst, 0xAA);
+        cpu.reg.write8(src, value);
+        let cycles = cpu.execute_instruction(&mut ram);
+
+        assert_eq!(cycles, 1);
+        assert_eq!(cpu.reg.pc, 1);
+        assert_eq!(cpu.reg.read8(dst), value);
+        assert_eq!(cpu.reg.read8(src), value);
     }
 
     fn test_op_incR16(inst: &[u8], dst:Register)
@@ -1863,5 +1897,101 @@ mod test {
         cpu.reg.f = 0x00;
         cpu.execute_instruction(&mut ram);
         assert_eq!(cpu.reg.f, Regs::CARRY_FLAG);
+    }
+
+    #[test]
+    fn cpu_0x40()
+    {
+        test_op_ldRR(&[0x40], Register::B, Register::B);
+    }
+
+    #[test]
+    fn cpu_0x41()
+    {
+        test_op_ldRR(&[0x41], Register::B, Register::C);
+    }
+
+    #[test]
+    fn cpu_0x42()
+    {
+        test_op_ldRR(&[0x42], Register::B, Register::D);
+    }
+
+    #[test]
+    fn cpu_0x43()
+    {
+        test_op_ldRR(&[0x43], Register::B, Register::E);
+    }
+
+    #[test]
+    fn cpu_0x44()
+    {
+        test_op_ldRR(&[0x44], Register::B, Register::H);
+    }
+
+    #[test]
+    fn cpu_0x45()
+    {
+        test_op_ldRR(&[0x45], Register::B, Register::L);
+    }
+
+    #[test]
+    fn cpu_0x46()
+    {
+        test_op_ldRM(&[0x46], Register::B, Register::HL, 0x4325, 23);
+    }
+
+    #[test]
+    fn cpu_0x47()
+    {
+        test_op_ldRR(&[0x47], Register::B, Register::A);
+    }
+
+    #[test]
+    fn cpu_0x48()
+    {
+        test_op_ldRR(&[0x48], Register::C, Register::B);
+    }
+
+    #[test]
+    fn cpu_0x49()
+    {
+        test_op_ldRR(&[0x49], Register::C, Register::C);
+    }
+
+    #[test]
+    fn cpu_0x4A()
+    {
+        test_op_ldRR(&[0x4A], Register::C, Register::D);
+    }
+
+    #[test]
+    fn cpu_0x4B()
+    {
+        test_op_ldRR(&[0x4B], Register::C, Register::E);
+    }
+
+    #[test]
+    fn cpu_0x4C()
+    {
+        test_op_ldRR(&[0x4C], Register::C, Register::H);
+    }
+
+    #[test]
+    fn cpu_0x4D()
+    {
+        test_op_ldRR(&[0x4d], Register::C, Register::L);
+    }
+
+    #[test]
+    fn cpu_0x4E()
+    {
+        test_op_ldRM(&[0x4E], Register::C, Register::HL, 0x1432, 9);
+    }
+
+    #[test]
+    fn cpu_0x4F()
+    {
+        test_op_ldRR(&[0x4F], Register::C, Register::A);
     }
 }
