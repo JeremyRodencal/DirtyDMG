@@ -1,4 +1,3 @@
-use std::num::Wrapping;
 use byteorder::{ByteOrder, LittleEndian};
 use crate::bus::{BusRW};
 
@@ -18,7 +17,6 @@ enum Register {
     SP
 }
 
-#[allow(dead_code)]
 struct Regs {
     a:u8,
     f:u8,
@@ -32,7 +30,6 @@ struct Regs {
     pc: u16,
 }
 
-#[allow(dead_code)]
 impl Regs {
     const CARRY_FLAG:u8  = 0b0001_0000;
     const HCARRY_FLAG:u8 = 0b0010_0000;
@@ -920,6 +917,7 @@ const INSTRUCTION_TABLE: [Instruction;256] = [
 ];
 
 #[cfg(test)]
+#[allow(non_snake_case)]
 mod test {
     use super::*;
     use crate::bus::{BusRW};
@@ -1320,7 +1318,7 @@ mod test {
         cpu.reg.pc = 0;
         cpu.reg.a = 0xAA;
         cpu.reg.f = 0xF0;
-        let cycles = cpu.execute_instruction(&mut ram);
+        cpu.execute_instruction(&mut ram);
 
         assert_eq!(cpu.reg.f, 0);
         assert_eq!(cpu.reg.a, 0x55);
