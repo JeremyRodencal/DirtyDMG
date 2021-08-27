@@ -358,6 +358,98 @@ impl Cpu {
                 }
             },
 
+            AddR{src} => {
+                let initial = self.reg.a;
+                let addend = self.reg.read8(*src);
+                self.reg.a  = self.reg.a.wrapping_add(addend);
+                
+                self.reg.f = 0;
+
+                // Check for carry flag
+                if self.reg.a < initial {
+                    self.reg.f |= Regs::CARRY_FLAG;
+                }
+
+                // Check for the half carry flag
+                if (initial ^ addend) & 0x10 != (self.reg.a & 0x10) {
+                    self.reg.f |= Regs::HCARRY_FLAG;
+                }
+
+                // Check for the zero flag
+                if self.reg.a == 0 {
+                    self.reg.f |= Regs::ZERO_FLAG;
+                }
+            }
+
+            AddCR{src} => {
+                let initial = self.reg.read8(*src);
+                let addend =  (self.reg.f & Regs::CARRY_FLAG) >> 4;
+                self.reg.a  = initial.wrapping_add(addend);
+                
+                self.reg.f = 0;
+
+                // Check for carry flag
+                if self.reg.a < initial {
+                    self.reg.f |= Regs::CARRY_FLAG;
+                }
+
+                // Check for the half carry flag
+                if (initial ^ addend) & 0x10 != (self.reg.a & 0x10) {
+                    self.reg.f |= Regs::HCARRY_FLAG;
+                }
+
+                // Check for the zero flag
+                if self.reg.a == 0 {
+                    self.reg.f |= Regs::ZERO_FLAG;
+                }
+            },
+
+            AddM => {
+                let initial = self.reg.a;
+                let addend = bus.bus_read8(self.reg.read16(Register::HL) as usize);
+                self.reg.a  = self.reg.a.wrapping_add(addend);
+                
+                // clear flags
+                self.reg.f = 0;
+
+                // Check for carry flag
+                if self.reg.a < initial {
+                    self.reg.f |= Regs::CARRY_FLAG;
+                }
+
+                // Check for the half carry flag
+                if (initial ^ addend) & 0x10 != (self.reg.a & 0x10) {
+                    self.reg.f |= Regs::HCARRY_FLAG;
+                }
+
+                // Check for the zero flag
+                if self.reg.a == 0 {
+                    self.reg.f |= Regs::ZERO_FLAG;
+                }
+            },
+            AddCM => {
+                let initial = bus.bus_read8(self.reg.read16(Register::HL) as usize);
+                let addend =  (self.reg.f & Regs::CARRY_FLAG) >> 4;
+                self.reg.a  = initial.wrapping_add(addend);
+                
+                self.reg.f = 0;
+
+                // Check for carry flag
+                if self.reg.a < initial {
+                    self.reg.f |= Regs::CARRY_FLAG;
+                }
+
+                // Check for the half carry flag
+                if (initial ^ addend) & 0x10 != (self.reg.a & 0x10) {
+                    self.reg.f |= Regs::HCARRY_FLAG;
+                }
+
+                // Check for the zero flag
+                if self.reg.a == 0 {
+                    self.reg.f |= Regs::ZERO_FLAG;
+                }
+            }
+
             Rla => {
                 // Determine the carry in for bit zero.
                 let carry_in = 
@@ -502,6 +594,26 @@ enum Operation {
 
     // Add two 16 bit registers.
     AddR16R16{dst:Register, src:Register},
+    // Add a register to the accumulator
+    AddR{src:Register},
+    // Add a byte addressed by HL into the accumulator
+    AddM,
+    // Add a register and the carry flag to the accumulator
+    AddCR{src:Register},
+    // Add a byte addressed by HL into the accumulator
+    AddCM,
+    // Subtract a register from the accumulator
+    SubR{src:Register},
+    // Subtract a register and the carry flag from the accumulator
+    SubCR{src:Register},
+    // Bitwise AND the accumulator against a register.
+    AndR{src:Register},
+    // Bitwise XOR the accumulator against a register.
+    XorR{src:Register},
+    // Bitwise OR the accumulator against a register.
+    OrR{src:Register},
+    // Compare a register against the accumulator
+    CpR{src:Register},
 
     // Correct binary coded decimal.
     Daa,
@@ -797,22 +909,22 @@ const INSTRUCTION_TABLE: [Instruction;256] = [
     Instruction{op:Operation::LdRR{dst:Register::A, src:Register::A}, length:1, cycles:1},
 
     // 0x8X
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::AddR{src:Register::B}, length:1, cycles:1},
+    Instruction{op:Operation::AddR{src:Register::C}, length:1, cycles:1},
+    Instruction{op:Operation::AddR{src:Register::D}, length:1, cycles:1},
+    Instruction{op:Operation::AddR{src:Register::E}, length:1, cycles:1},
+    Instruction{op:Operation::AddR{src:Register::H}, length:1, cycles:1},
+    Instruction{op:Operation::AddR{src:Register::L}, length:1, cycles:1},
+    Instruction{op:Operation::AddM, length:1, cycles:2},
+    Instruction{op:Operation::AddR{src:Register::A}, length:1, cycles:1},
+    Instruction{op:Operation::AddCR{src:Register::B}, length:1, cycles:1},
+    Instruction{op:Operation::AddCR{src:Register::C}, length:1, cycles:1},
+    Instruction{op:Operation::AddCR{src:Register::D}, length:1, cycles:1},
+    Instruction{op:Operation::AddCR{src:Register::E}, length:1, cycles:1},
+    Instruction{op:Operation::AddCR{src:Register::H}, length:1, cycles:1},
+    Instruction{op:Operation::AddCR{src:Register::L}, length:1, cycles:1},
+    Instruction{op:Operation::AddCM, length:1, cycles:2},
+    Instruction{op:Operation::AddCR{src:Register::A}, length:1, cycles:1},
 
     // 0x9X
     Instruction{op:Operation::Nop, length:1, cycles:1},
@@ -1134,6 +1246,66 @@ mod test {
         cpu.execute_instruction(&mut ram);
         assert_eq!(cpu.reg.read16(dst), result);
         assert_eq!(cpu.reg.f, Regs::CARRY_FLAG | Regs::HCARRY_FLAG);
+    }
+
+    fn test_op_addr(inst: &[u8], src:Register)
+    {
+        let mut cpu = Cpu::new();
+        let mut ram = get_ram();
+        load_into_ram(&mut ram, &inst);
+
+        // Set all flags, to verify they change
+        cpu.reg.f = 0xFF;
+        cpu.reg.a = 0x00;
+        cpu.reg.write8(src, 0);
+
+        let cycles = cpu.execute_instruction(&mut ram);
+        assert_eq!(cycles, 1);
+        assert_eq!(cpu.reg.pc, 1);
+        assert_eq!(cpu.reg.a, 0);
+        assert_eq!(cpu.reg.f, Regs::ZERO_FLAG);
+
+        cpu = Cpu::new();
+        cpu.reg.a = 0xFF;
+        // Deal with case where dst and src are the same.
+        let expected = if src != Register::A {
+            cpu.reg.write8(src, 0xF);
+            0x0E
+        } else { 0xFE };
+
+        cpu.execute_instruction(&mut ram);
+        assert_eq!(cpu.reg.a, expected);
+        assert_eq!(cpu.reg.f, Regs::CARRY_FLAG | Regs::HCARRY_FLAG);
+        
+        if src != Register::A
+        {
+            cpu = Cpu::new();
+            cpu.reg.a = 0x02;
+            cpu.reg.write8(src, 0x2E);
+            cpu.execute_instruction(&mut ram);
+            assert_eq!(cpu.reg.a, 0x30);
+            assert_eq!(cpu.reg.f, Regs::HCARRY_FLAG);
+        }
+    }
+
+    fn test_op_addcr(inst: &[u8], src:Register)
+    {
+        let mut cpu = Cpu::new();
+        let mut ram = get_ram();
+
+        load_into_ram(&mut ram, &inst);
+
+        // set the carry flag
+        cpu.reg.write8(src, 0xFF);
+        cpu.reg.f = Regs::CARRY_FLAG;
+
+        if src != Register::A{
+            cpu.reg.a = 23; // Just a nonzero value.
+        }
+        let cycles = cpu.execute_instruction(&mut ram);
+        assert_eq!(cpu.reg.pc, 1);
+        assert_eq!(cycles, 1);
+        assert_eq!(cpu.reg.a, 0);
     }
 
     fn test_op_ldRM(inst: &[u8], dst:Register, src:Register, addr: u16, value: u8)
@@ -2360,5 +2532,157 @@ mod test {
     fn cpu_0x7F()
     {
         test_op_ldRR(&[0x7F], Register::A, Register::A);
+    }
+
+    #[test]
+    fn cpu_0x80()
+    {
+        test_op_addr(&[0x80], Register::B);
+    }
+
+    #[test]
+    fn cpu_0x81()
+    {
+        test_op_addr(&[0x81], Register::C);
+    }
+
+    #[test]
+    fn cpu_0x82()
+    {
+        test_op_addr(&[0x82], Register::D);
+    }
+
+    #[test]
+    fn cpu_0x83()
+    {
+        test_op_addr(&[0x83], Register::E);
+    }
+
+    #[test]
+    fn cpu_0x84()
+    {
+        test_op_addr(&[0x84], Register::H);
+    }
+
+    #[test]
+    fn cpu_0x85()
+    {
+        test_op_addr(&[0x85], Register::L);
+    }
+
+    #[test]
+    fn cpu_0x86()
+    {
+        let mut cpu = Cpu::new();
+        let mut ram = get_ram();
+
+        // Load the instruction into ram
+        load_into_ram(&mut ram, &[0x86]);
+
+        // Setup ram with a test value;
+        let address = 0x1000;
+        let value = 1;
+        let expected = 0;
+        cpu.reg.a = 0xFF;
+        cpu.reg.f = 0xFF;
+        cpu.reg.write16(Register::HL, address as u16);
+        ram.bus_write8(address, value);
+        let cycles = cpu.execute_instruction(&mut ram);
+
+        assert_eq!(cycles, 2);
+        assert_eq!(cpu.reg.pc, 1);
+        assert_eq!(cpu.reg.a, expected);
+        assert_eq!(cpu.reg.f, Regs::ZERO_FLAG | Regs::CARRY_FLAG | Regs::HCARRY_FLAG);
+
+        // Add values that will cause a half carry.
+        let value = 0x9;
+        cpu = Cpu::new();
+        cpu.reg.a = 0x7;
+        cpu.reg.write16(Register::HL, address as u16);
+        ram.bus_write8(address, value);
+        cpu.execute_instruction(&mut ram);
+
+        assert_eq!(cpu.reg.a, 0x10);
+        assert_eq!(cpu.reg.f, Regs::HCARRY_FLAG);
+    }
+
+    #[test]
+    fn cpu_0x87()
+    {
+        test_op_addr(&[0x87], Register::A);
+    }
+
+    #[test]
+    fn cpu_0x88()
+    {
+        test_op_addcr(&[0x88], Register::B);
+    }
+
+    #[test]
+    fn cpu_0x89()
+    {
+        test_op_addcr(&[0x89], Register::C);
+    }
+
+    #[test]
+    fn cpu_0x8A()
+    {
+        test_op_addcr(&[0x8A], Register::D);
+    }
+
+    #[test]
+    fn cpu_0x8B()
+    {
+        test_op_addcr(&[0x8B], Register::E);
+    }
+
+    #[test]
+    fn cpu_0x8C()
+    {
+        test_op_addcr(&[0x8C], Register::H);
+    }
+
+    #[test]
+    fn cpu_0x8D()
+    {
+        test_op_addcr(&[0x8D], Register::L);
+    }
+
+    #[test]
+    fn cpu_0x8E()
+    {
+        let mut cpu = Cpu::new();
+        let mut ram = get_ram();
+
+        // Initialize Ram
+        load_into_ram(&mut ram, &[0x8E]);
+        let address = 0x32;
+        let value = 0xFF;
+        ram.bus_write8(address, value);
+
+        // Set the carry flag
+        cpu.reg.write16(Register::HL, address as u16);
+        cpu.reg.f = Regs::CARRY_FLAG;
+        cpu.reg.a = 23; // Just a nonzero value.
+
+        // Execute the instruction
+        let cycles = cpu.execute_instruction(&mut ram);
+        assert_eq!(cpu.reg.pc, 1);
+        assert_eq!(cycles, 2);
+        assert_eq!(cpu.reg.a, 0);
+        assert_eq!(cpu.reg.f, Regs::CARRY_FLAG | Regs::HCARRY_FLAG | Regs::ZERO_FLAG);
+
+        // Reset, reload the address register
+        cpu = Cpu::new();
+        cpu.reg.write16(Register::HL, address as u16);
+        cpu.execute_instruction(&mut ram);
+        assert_eq!(cpu.reg.a, 0xFF);
+        assert_eq!(cpu.reg.f, 0);
+    }
+
+    #[test]
+    fn cpu_0x8F()
+    {
+        test_op_addcr(&[0x8F], Register::A);
     }
 }
