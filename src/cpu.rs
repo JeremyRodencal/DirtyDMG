@@ -583,6 +583,68 @@ impl Cpu {
                 }
             }
 
+            OrR{src} => {
+                self.reg.a |= self.reg.read8(*src);
+                self.reg.f = 0;
+                if self.reg.a == 0 {
+                    self.reg.f |= Regs::ZERO_FLAG;
+                }
+            }
+
+            OrM => {
+                self.reg.a |= bus.bus_read8(self.reg.read16(Register::HL) as usize);
+                self.reg.f = 0;
+                if self.reg.a == 0 {
+                    self.reg.f |= Regs::ZERO_FLAG;
+                }
+            }
+
+            CpR{src} => {
+                let minuend = self.reg.a;
+                let sub = self.reg.read8(*src);
+                let result = self.reg.a.wrapping_sub(sub);
+
+                self.reg.f = Regs::SUB_FLAG;
+
+                // Check for carry flag
+                if result > minuend {
+                    self.reg.f |= Regs::CARRY_FLAG;
+                }
+
+                // Check for the half carry flag
+                if (result << 4) > (minuend << 4){
+                    self.reg.f |= Regs::HCARRY_FLAG;
+                }
+
+                // Check for the zero flag
+                if result == 0 {
+                    self.reg.f |= Regs::ZERO_FLAG;
+                }
+            }
+
+            CpM => {
+                let minuend = self.reg.a;
+                let sub = bus.bus_read8(self.reg.read16(Register::HL) as usize);
+                let result = self.reg.a.wrapping_sub(sub);
+
+                self.reg.f = Regs::SUB_FLAG;
+
+                // Check for carry flag
+                if result > minuend {
+                    self.reg.f |= Regs::CARRY_FLAG;
+                }
+
+                // Check for the half carry flag
+                if (result << 4) > (minuend << 4){
+                    self.reg.f |= Regs::HCARRY_FLAG;
+                }
+
+                // Check for the zero flag
+                if result == 0 {
+                    self.reg.f |= Regs::ZERO_FLAG;
+                }
+            }
+
             Rla => {
                 // Determine the carry in for bit zero.
                 let carry_in = 
@@ -754,9 +816,11 @@ enum Operation {
     // Bitwise OR the accumulator against a register.
     OrR{src:Register},
     // Bitwise XOR the accumulator against a memory value addressed by HL.
-    OrM{src:Register},
+    OrM,
     // Compare a register against the accumulator
     CpR{src:Register},
+    // Compare a memory location addressed by HL to the accumulator.
+    CpM,
 
     // Correct binary coded decimal.
     Daa,
@@ -1102,26 +1166,27 @@ const INSTRUCTION_TABLE: [Instruction;256] = [
     Instruction{op:Operation::XorR{src:Register::E}, length:1, cycles:1},
     Instruction{op:Operation::XorR{src:Register::H}, length:1, cycles:1},
     Instruction{op:Operation::XorR{src:Register::L}, length:1, cycles:1},
-    Instruction{op:Operation::XorM,                  length:1, cycles:1},
+    Instruction{op:Operation::XorM,                  length:1, cycles:2},
     Instruction{op:Operation::XorR{src:Register::A}, length:1, cycles:1},
 
     // 0xBX
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::OrR{src:Register::B}, length:1, cycles:1},
+    Instruction{op:Operation::OrR{src:Register::C}, length:1, cycles:1},
+    Instruction{op:Operation::OrR{src:Register::D}, length:1, cycles:1},
+    Instruction{op:Operation::OrR{src:Register::E}, length:1, cycles:1},
+    Instruction{op:Operation::OrR{src:Register::H}, length:1, cycles:1},
+    Instruction{op:Operation::OrR{src:Register::L}, length:1, cycles:1},
+    Instruction{op:Operation::OrM,                  length:1, cycles:2},
+    Instruction{op:Operation::OrR{src:Register::A}, length:1, cycles:1},
+
+    Instruction{op:Operation::CpR{src:Register::B}, length:1, cycles:1},
+    Instruction{op:Operation::CpR{src:Register::C}, length:1, cycles:1},
+    Instruction{op:Operation::CpR{src:Register::D}, length:1, cycles:1},
+    Instruction{op:Operation::CpR{src:Register::E}, length:1, cycles:1},
+    Instruction{op:Operation::CpR{src:Register::H}, length:1, cycles:1},
+    Instruction{op:Operation::CpR{src:Register::L}, length:1, cycles:1},
+    Instruction{op:Operation::CpM                 , length:1, cycles:2},
+    Instruction{op:Operation::CpR{src:Register::A}, length:1, cycles:1},
 
     // 0xCX
     Instruction{op:Operation::Nop, length:1, cycles:1},
@@ -1688,7 +1753,94 @@ mod test {
 
     fn test_op_xorm(inst: &[u8])
     {
-        test_op_xor(&inst, get_memory_HL_setter(0xFF), 1);
+        test_op_xor(&inst, get_memory_HL_setter(0xFF), 2);
+    }
+
+    fn test_op_or<T>(inst: &[u8], set_src:T, cycleCount:u8)
+        where T: Fn(&mut Cpu, &mut Ram, u8)
+    {
+        let mut cpu = Cpu::new();
+        let mut ram = get_ram();
+        load_into_ram(&mut ram, inst);
+
+        // Evaluates to zero case (except self reference)
+        cpu.reg.a = 0xAA;
+        set_src(&mut cpu, &mut ram, 0x55);
+        let self_referenced = cpu.reg.a != 0xAA;
+        let expected_a = if self_referenced {0x55} else {0xFF};
+        let expected_flags = 0;
+
+        let cycles = cpu.execute_instruction(&mut ram);
+        assert_eq!(cycles, cycleCount);
+        assert_eq!(cpu.reg.pc, 1);
+        assert_eq!(cpu.reg.a, expected_a);
+        assert_eq!(cpu.reg.f, expected_flags);
+
+        // Non zero case.
+        cpu = Cpu::new();
+        cpu.reg.a = 0xF0;
+        set_src(&mut cpu, &mut ram, 0x01);
+        let expected_a = if self_referenced {0x01} else {0xF1};
+        let expected_flags = 0;
+
+        cpu.execute_instruction(&mut ram);
+        assert_eq!(cpu.reg.a, expected_a);
+        assert_eq!(cpu.reg.f, expected_flags);
+    }
+
+    fn test_op_orr(inst: &[u8], src:Register)
+    {
+        test_op_or(&inst, get_register8_setter(src), 1);
+    }
+
+    fn test_op_orm(inst: &[u8])
+    {
+        test_op_or(&inst, get_memory_HL_setter(0xFF), 2);
+    }
+
+    fn test_op_cp<T>(inst: &[u8], set_src:T, cycle_count:u8)
+        where T: Fn(&mut Cpu, &mut Ram, u8)
+    {
+        let mut cpu = Cpu::new();
+        let mut ram = get_ram();
+        load_into_ram(&mut ram, &inst);
+        
+        // euqal case
+        let equal_value = 9;
+        set_src(&mut cpu, &mut ram, equal_value);
+        let self_reference = cpu.reg.a != 0;
+        cpu.reg.a = equal_value;
+        let expected_flags = Regs::ZERO_FLAG | Regs::SUB_FLAG;
+
+        let cycles = cpu.execute_instruction(&mut ram);
+
+        assert_eq!(cycles, cycle_count);
+        assert_eq!(cpu.reg.pc, 1);
+        assert_eq!(cpu.reg.a, equal_value);
+        assert_eq!(cpu.reg.f, expected_flags);
+
+        // not equal case ( not possible to test with self reference case)
+        if self_reference == false{
+            cpu = Cpu::new();
+            cpu.reg.a = 9;
+            set_src(&mut cpu, &mut ram, 10);
+            let expected_flags = Regs::CARRY_FLAG | Regs::HCARRY_FLAG | Regs::SUB_FLAG;
+
+            cpu.execute_instruction(&mut ram);
+
+            assert_eq!(cpu.reg.a, 9);
+            assert_eq!(cpu.reg.f, expected_flags);
+        }
+    }
+
+    fn test_op_cpr(inst: &[u8], src:Register)
+    {
+        test_op_cp(&inst, get_register8_setter(src), 1);
+    }
+
+    fn test_op_cpm(inst: &[u8])
+    {
+        test_op_cp(&inst, get_memory_HL_setter(234), 2);
     }
 
     #[test]
@@ -3243,5 +3395,101 @@ mod test {
     fn cpu_0xAF()
     {
         test_op_xorr(&[0xAF], Register::A);
+    }
+
+    #[test]
+    fn cpu_0xB0()
+    {
+        test_op_orr(&[0xB0], Register::B);
+    }
+
+    #[test]
+    fn cpu_0xB1()
+    {
+        test_op_orr(&[0xB1], Register::C);
+    }
+
+    #[test]
+    fn cpu_0xB2()
+    {
+        test_op_orr(&[0xB2], Register::D);
+    }
+
+    #[test]
+    fn cpu_0xB3()
+    {
+        test_op_orr(&[0xB3], Register::E);
+    }
+
+    #[test]
+    fn cpu_0xB4()
+    {
+        test_op_orr(&[0xB4], Register::H);
+    }
+
+    #[test]
+    fn cpu_0xB5()
+    {
+        test_op_orr(&[0xB5], Register::L);
+    }
+
+    #[test]
+    fn cpu_0xB6()
+    {
+        test_op_orm(&[0xB6]);
+    }
+
+    #[test]
+    fn cpu_0xB7()
+    {
+        test_op_orr(&[0xB7], Register::A)
+    }
+
+    #[test]
+    fn cpu_0xB8()
+    {
+        test_op_cpr(&[0xB8], Register::B);
+    }
+
+    #[test]
+    fn cpu_0xB9()
+    {
+        test_op_cpr(&[0xB9], Register::C);
+    }
+
+    #[test]
+    fn cpu_0xBA()
+    {
+        test_op_cpr(&[0xBA], Register::D);
+    }
+
+    #[test]
+    fn cpu_0xBB()
+    {
+        test_op_cpr(&[0xBB], Register::E);
+    }
+
+    #[test]
+    fn cpu_0xBC()
+    {
+        test_op_cpr(&[0xBC], Register::H);
+    }
+
+    #[test]
+    fn cpu_0xBD()
+    {
+        test_op_cpr(&[0xBD], Register::L);
+    }
+
+    #[test]
+    fn cpu_0xBE()
+    {
+        test_op_cpm(&[0xBE]);
+    }
+
+    #[test]
+    fn cpu_0xBF()
+    {
+        test_op_cpr(&[0xBF], Register::A);
     }
 }
