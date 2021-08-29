@@ -450,6 +450,107 @@ impl Cpu {
                 }
             }
 
+            SubR{src} => {
+                let minuend = self.reg.a;
+                let sub = self.reg.read8(*src);
+                self.reg.a = self.reg.a.wrapping_sub(sub);
+
+                self.reg.f = Regs::SUB_FLAG;
+
+                // Check for carry flag
+                if self.reg.a > minuend {
+                    self.reg.f |= Regs::CARRY_FLAG;
+                }
+
+                // Check for the half carry flag
+                if (self.reg.a << 4) > (minuend << 4){
+                    self.reg.f |= Regs::HCARRY_FLAG;
+                }
+
+                // Check for the zero flag
+                if self.reg.a == 0 {
+                    self.reg.f |= Regs::ZERO_FLAG;
+                }
+            }
+
+            SubM => {
+                let minuend = self.reg.a;
+                let sub = bus.bus_read8(self.reg.read16(Register::HL) as usize);
+                self.reg.a = self.reg.a.wrapping_sub(sub);
+
+                self.reg.f = Regs::SUB_FLAG;
+
+                // Check for carry flag
+                if self.reg.a > minuend {
+                    self.reg.f |= Regs::CARRY_FLAG;
+                }
+
+                // Check for the half carry flag
+                if (self.reg.a << 4) > (minuend << 4){
+                    self.reg.f |= Regs::HCARRY_FLAG;
+                }
+
+                // Check for the zero flag
+                if self.reg.a == 0 {
+                    self.reg.f |= Regs::ZERO_FLAG;
+                }
+            }
+
+            SbcR {src} => {
+                // May not be accurate enough?
+                // Should set HCARRY and CARRY if subtracting 256?
+                let minuend = self.reg.a;
+                let mut sub = self.reg.read8(*src); 
+                if self.reg.f & Regs::CARRY_FLAG != 0 {
+                    sub = sub.wrapping_add(1);
+                }
+                self.reg.a = self.reg.a.wrapping_sub(sub);
+                self.reg.f = Regs::SUB_FLAG;
+
+                // Check for carry flag
+                if self.reg.a > minuend {
+                    self.reg.f |= Regs::CARRY_FLAG;
+                }
+
+                // Check for the half carry flag
+                if (self.reg.a << 4) > (minuend << 4){
+                    self.reg.f |= Regs::HCARRY_FLAG;
+                }
+
+                // Check for the zero flag
+                if self.reg.a == 0 {
+                    self.reg.f |= Regs::ZERO_FLAG;
+                }
+            }
+
+            SbcM => {
+                // May not be accurate enough?
+                // Should set HCARRY and CARRY if subtracting 256?
+                let minuend = self.reg.a;
+                let mut sub = bus.bus_read8(self.reg.read16(Register::HL) as usize);
+                if self.reg.f & Regs::CARRY_FLAG != 0 {
+                    sub = sub.wrapping_add(1);
+                }
+                self.reg.a = self.reg.a.wrapping_sub(sub);
+
+                self.reg.f = Regs::SUB_FLAG;
+
+                // Check for carry flag
+                if self.reg.a > minuend {
+                    self.reg.f |= Regs::CARRY_FLAG;
+                }
+
+                // Check for the half carry flag
+                if (self.reg.a << 4) > (minuend << 4){
+                    self.reg.f |= Regs::HCARRY_FLAG;
+                }
+
+                // Check for the zero flag
+                if self.reg.a == 0 {
+                    self.reg.f |= Regs::ZERO_FLAG;
+                }
+            }
+
             Rla => {
                 // Determine the carry in for bit zero.
                 let carry_in = 
@@ -604,8 +705,12 @@ enum Operation {
     AddCM,
     // Subtract a register from the accumulator
     SubR{src:Register},
+    // Subtract memory locaton address by HL and the carry flag from the accumulator.
+    SubM,
     // Subtract a register and the carry flag from the accumulator
-    SubCR{src:Register},
+    SbcR{src:Register},
+    // Subtract value in memory addressed by HL and the carry flag from the accumulator.
+    SbcM,
     // Bitwise AND the accumulator against a register.
     AndR{src:Register},
     // Bitwise XOR the accumulator against a register.
@@ -927,22 +1032,22 @@ const INSTRUCTION_TABLE: [Instruction;256] = [
     Instruction{op:Operation::AddCR{src:Register::A}, length:1, cycles:1},
 
     // 0x9X
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::SubR{src:Register::B}, length:1, cycles:1},
+    Instruction{op:Operation::SubR{src:Register::C}, length:1, cycles:1},
+    Instruction{op:Operation::SubR{src:Register::D}, length:1, cycles:1},
+    Instruction{op:Operation::SubR{src:Register::E}, length:1, cycles:1},
+    Instruction{op:Operation::SubR{src:Register::H}, length:1, cycles:1},
+    Instruction{op:Operation::SubR{src:Register::L}, length:1, cycles:1},
+    Instruction{op:Operation::SubM,                  length:1, cycles:2},
+    Instruction{op:Operation::SubR{src:Register::A}, length:1, cycles:1},
+    Instruction{op:Operation::SbcR{src:Register::B}, length:1, cycles:1},
+    Instruction{op:Operation::SbcR{src:Register::C}, length:1, cycles:1},
+    Instruction{op:Operation::SbcR{src:Register::D}, length:1, cycles:1},
+    Instruction{op:Operation::SbcR{src:Register::E}, length:1, cycles:1},
+    Instruction{op:Operation::SbcR{src:Register::H}, length:1, cycles:1},
+    Instruction{op:Operation::SbcR{src:Register::L}, length:1, cycles:1},
+    Instruction{op:Operation::SbcM,                  length:1, cycles:2},
+    Instruction{op:Operation::SbcR{src:Register::A}, length:1, cycles:1},
 
     // 0xAX
     Instruction{op:Operation::Nop, length:1, cycles:1},
@@ -1070,6 +1175,21 @@ mod test {
         for val in inst {
             ram.bus_write8(addr, *val);
             addr += 1;
+        }
+    }
+
+    fn get_memory_HL_setter(address: usize) ->  impl Fn(&mut Cpu, &mut Ram, u8)
+    {
+        move |cpu:&mut Cpu, ram:&mut Ram, value:u8| {
+            cpu.reg.write16(Register::HL, address as u16);
+            ram.bus_write8(address, value);
+        }
+    }
+    
+    fn get_register8_setter(target:Register) -> impl Fn(&mut Cpu, &mut Ram, u8)
+    {
+        move |cpu:&mut Cpu, ram:&mut Ram, value:u8| {
+            cpu.reg.write8(target, value);
         }
     }
 
@@ -1340,6 +1460,111 @@ mod test {
         assert_eq!(cpu.reg.pc, 1);
         assert_eq!(cpu.reg.read16(dst), 0xFFFF);
         assert_eq!(cpu.reg.f, flags);
+    }
+
+    fn test_op_subr(inst: &[u8], src:Register)
+    {
+        let mut cpu = Cpu::new();
+        let mut ram = get_ram();
+        load_into_ram(&mut ram, &inst);
+        
+        cpu.reg.write8(src, 2);
+        cpu.reg.a = if src != Register::A {0} else {2};
+        let result = if src == Register::A {0} else {0xFE};
+        let expected_flags = if src == Register::A {
+            Regs::ZERO_FLAG |Regs::SUB_FLAG
+        } else {
+            Regs::CARRY_FLAG | Regs::HCARRY_FLAG | Regs::SUB_FLAG
+        };
+        let cycles = cpu.execute_instruction(&mut ram);
+
+        assert_eq!(cycles, 1);
+        assert_eq!(cpu.reg.pc, 1);
+        assert_eq!(cpu.reg.a, result);
+        assert_eq!(cpu.reg.f, expected_flags);
+    }
+
+    fn test_op_sbc<T>(inst:&[u8], set_src:T, cycles:u8)
+        where T: Fn(&mut Cpu, &mut Ram, u8)
+    {
+        let mut cpu = Cpu::new();
+        let mut ram = get_ram();
+        load_into_ram(&mut ram, inst);
+
+        let init_a = 2;
+        cpu.reg.f = Regs::CARRY_FLAG;
+        cpu.reg.a = init_a;
+
+        set_src(&mut cpu, &mut ram, 1);
+        let self_referenced = cpu.reg.a != init_a;
+
+
+        let executed_cycles = cpu.execute_instruction(&mut ram);
+
+        assert_eq!(executed_cycles, cycles);
+        assert_eq!(cpu.reg.pc, 1);
+
+        if self_referenced {
+            // Self referenced case is 
+            assert_eq!(cpu.reg.a, 255);
+            assert_eq!(cpu.reg.f, Regs::SUB_FLAG | Regs::CARRY_FLAG | Regs::HCARRY_FLAG);
+        } else {
+            assert_eq!(cpu.reg.a, 0);
+            assert_eq!(cpu.reg.f, Regs::SUB_FLAG | Regs::ZERO_FLAG);
+        }
+
+
+        if self_referenced == false {
+            // set carry flag
+            cpu = Cpu::new();
+            cpu.reg.a = 2;
+            cpu.reg.f = Regs::CARRY_FLAG;
+            set_src(&mut cpu, &mut ram, 2);
+
+            cpu.execute_instruction(&mut ram);
+
+            assert_eq!(cpu.reg.a, 255);
+            assert_eq!(cpu.reg.f, Regs::SUB_FLAG | Regs::CARRY_FLAG | Regs::HCARRY_FLAG);
+        }
+
+        // Carry flag not set, half carry.
+        if self_referenced == false {
+            cpu = Cpu::new();
+            cpu.reg.a = 0x11;
+            set_src(&mut cpu, &mut ram, 3);
+
+            cpu.execute_instruction(&mut ram);
+
+            assert_eq!(cpu.reg.a, 0x0E);
+            assert_eq!(cpu.reg.f, Regs::SUB_FLAG | Regs::HCARRY_FLAG);
+        }
+
+        // Carry flag not set, no carry
+        cpu = Cpu::new();
+        cpu.reg.a = 0x13;
+        let expected_a = if self_referenced {0} else {0x10};
+        let expected_flags = if self_referenced {
+            Regs::SUB_FLAG | Regs::ZERO_FLAG
+        } else {
+            Regs::SUB_FLAG
+        };
+
+        set_src(&mut cpu, &mut ram, 3);
+
+        cpu.execute_instruction(&mut ram);
+
+        assert_eq!(cpu.reg.a, expected_a);
+        assert_eq!(cpu.reg.f, expected_flags);
+    }
+
+    fn test_op_sbcr(inst: &[u8], src:Register)
+    {
+        test_op_sbc(&inst, get_register8_setter(src), 1);
+    }
+
+    fn test_op_sbcm(inst: &[u8])
+    {
+        test_op_sbc(&inst, get_memory_HL_setter(0x3245), 2);
     }
 
     #[test]
@@ -2684,5 +2909,119 @@ mod test {
     fn cpu_0x8F()
     {
         test_op_addcr(&[0x8F], Register::A);
+    }
+
+    #[test]
+    fn cpu_0x90()
+    {
+        test_op_subr(&[0x90], Register::B);
+    }
+
+    #[test]
+    fn cpu_0x91()
+    {
+        test_op_subr(&[0x91], Register::C);
+    }
+
+    #[test]
+    fn cpu_0x92()
+    {
+        test_op_subr(&[0x92], Register::D);
+    }
+
+    #[test]
+    fn cpu_0x93()
+    {
+        test_op_subr(&[0x93], Register::E);
+    }
+
+    #[test]
+    fn cpu_0x94()
+    {
+        test_op_subr(&[0x94], Register::H);
+    }
+
+    #[test]
+    fn cpu_0x95()
+    {
+        test_op_subr(&[0x95], Register::L);
+    }
+
+    #[test]
+    fn cpu_0x96()
+    {
+        let mut cpu = Cpu::new();
+        let mut ram = get_ram();
+        load_into_ram(&mut ram, &[0x96]);
+        
+        let address = 0x2398;
+        let value = 18;
+        let expected = 255;
+        let expected_flags = Regs::CARRY_FLAG | Regs::HCARRY_FLAG | Regs::SUB_FLAG;
+
+        ram.bus_write16(address, value);
+        cpu.reg.write16(Register::HL, address as u16);
+        cpu.reg.a = 17;
+
+        let cycles = cpu.execute_instruction(&mut ram);
+
+        assert_eq!(cycles, 2);
+        assert_eq!(cpu.reg.pc, 1);
+        assert_eq!(cpu.reg.a, expected);
+        assert_eq!(cpu.reg.f, expected_flags);
+    }
+
+    #[test]
+    fn cpu_0x97()
+    {
+        test_op_subr(&[0x97], Register::A);
+    }
+
+    #[test]
+    fn cpu_0x98()
+    {
+        test_op_sbcr(&[0x98], Register::B);
+    }
+
+    #[test]
+    fn cpu_0x99()
+    {
+        test_op_sbcr(&[0x99], Register::C);
+    }
+
+    #[test]
+    fn cpu_0x9A()
+    {
+        test_op_sbcr(&[0x9A], Register::D);
+    }
+
+    #[test]
+    fn cpu_0x9B()
+    {
+        test_op_sbcr(&[0x9B], Register::E);
+    }
+
+    #[test]
+    fn cpu_0x9C()
+    {
+        test_op_sbcr(&[0x9C], Register::H);
+    }
+
+    #[test]
+    fn cpu_0x9D()
+    {
+        test_op_sbcr(&[0x9D], Register::L);
+    }
+
+    #[test]
+    fn cpu_0x9E()
+    {
+        test_op_sbcm(&[0x9E]);
+    }
+
+    #[test]
+    fn cpu_0x9F()
+    {
+        test_op_sbcr(&[0x9F], Register::A);
     }
 }
