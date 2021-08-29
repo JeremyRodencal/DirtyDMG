@@ -551,6 +551,38 @@ impl Cpu {
                 }
             }
 
+            AndR{src} => {
+                self.reg.a &= self.reg.read8(*src);
+                self.reg.f = Regs::HCARRY_FLAG;
+                if self.reg.a == 0 {
+                    self.reg.f |= Regs::ZERO_FLAG;
+                }
+            }
+
+            AndM => {
+                self.reg.a &= bus.bus_read8(self.reg.read16(Register::HL) as usize);
+                self.reg.f = Regs::HCARRY_FLAG;
+                if self.reg.a == 0 {
+                    self.reg.f |= Regs::ZERO_FLAG;
+                }
+            }
+
+            XorR{src} => {
+                self.reg.a ^= self.reg.read8(*src);
+                self.reg.f = 0;
+                if self.reg.a == 0 {
+                    self.reg.f |= Regs::ZERO_FLAG;
+                }
+            }
+
+            XorM => {
+                self.reg.a ^= bus.bus_read8(self.reg.read16(Register::HL) as usize);
+                self.reg.f = 0;
+                if self.reg.a == 0 {
+                    self.reg.f |= Regs::ZERO_FLAG;
+                }
+            }
+
             Rla => {
                 // Determine the carry in for bit zero.
                 let carry_in = 
@@ -713,10 +745,16 @@ enum Operation {
     SbcM,
     // Bitwise AND the accumulator against a register.
     AndR{src:Register},
+    // Bitwise AND the accumulator against a memory value addressed by HL.
+    AndM,
     // Bitwise XOR the accumulator against a register.
     XorR{src:Register},
+    // Bitwise XOR the accumulator against a memory value addressed by HL.
+    XorM,
     // Bitwise OR the accumulator against a register.
     OrR{src:Register},
+    // Bitwise XOR the accumulator against a memory value addressed by HL.
+    OrM{src:Register},
     // Compare a register against the accumulator
     CpR{src:Register},
 
@@ -1050,22 +1088,22 @@ const INSTRUCTION_TABLE: [Instruction;256] = [
     Instruction{op:Operation::SbcR{src:Register::A}, length:1, cycles:1},
 
     // 0xAX
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::AndR{src:Register::B}, length:1, cycles:1},
+    Instruction{op:Operation::AndR{src:Register::C}, length:1, cycles:1},
+    Instruction{op:Operation::AndR{src:Register::D}, length:1, cycles:1},
+    Instruction{op:Operation::AndR{src:Register::E}, length:1, cycles:1},
+    Instruction{op:Operation::AndR{src:Register::H}, length:1, cycles:1},
+    Instruction{op:Operation::AndR{src:Register::L}, length:1, cycles:1},
+    Instruction{op:Operation::AndM,                  length:1, cycles:2},
+    Instruction{op:Operation::AndR{src:Register::A}, length:1, cycles:1},
+    Instruction{op:Operation::XorR{src:Register::B}, length:1, cycles:1},
+    Instruction{op:Operation::XorR{src:Register::C}, length:1, cycles:1},
+    Instruction{op:Operation::XorR{src:Register::D}, length:1, cycles:1},
+    Instruction{op:Operation::XorR{src:Register::E}, length:1, cycles:1},
+    Instruction{op:Operation::XorR{src:Register::H}, length:1, cycles:1},
+    Instruction{op:Operation::XorR{src:Register::L}, length:1, cycles:1},
+    Instruction{op:Operation::XorM,                  length:1, cycles:1},
+    Instruction{op:Operation::XorR{src:Register::A}, length:1, cycles:1},
 
     // 0xBX
     Instruction{op:Operation::Nop, length:1, cycles:1},
@@ -1565,6 +1603,92 @@ mod test {
     fn test_op_sbcm(inst: &[u8])
     {
         test_op_sbc(&inst, get_memory_HL_setter(0x3245), 2);
+    }
+
+    fn test_op_and<T>(inst: &[u8], set_src:T, cycleCount:u8)
+        where T: Fn(&mut Cpu, &mut Ram, u8)
+    {
+        let mut cpu = Cpu::new();
+        let mut ram = get_ram();
+        load_into_ram(&mut ram, inst);
+
+        // Evaluates to zero case (except self reference)
+        cpu.reg.a = 0xAA;
+        set_src(&mut cpu, &mut ram, 0x55);
+        let self_referenced = cpu.reg.a != 0xAA;
+        let expected_a = if self_referenced {cpu.reg.a} else {0};
+        let expected_flags = if self_referenced {Regs::HCARRY_FLAG} 
+                             else {Regs::HCARRY_FLAG | Regs::ZERO_FLAG};
+
+        let cycles = cpu.execute_instruction(&mut ram);
+        assert_eq!(cycles, cycleCount);
+        assert_eq!(cpu.reg.pc, 1);
+        assert_eq!(cpu.reg.a, expected_a);
+        assert_eq!(cpu.reg.f, expected_flags);
+
+        // Non zero case.
+        cpu = Cpu::new();
+        cpu.reg.a = 0xFF;
+        set_src(&mut cpu, &mut ram, 0x0F);
+        let expected_a = if self_referenced {cpu.reg.a} else {0x0F};
+        let expected_flags = Regs::HCARRY_FLAG;
+
+        cpu.execute_instruction(&mut ram);
+        assert_eq!(cpu.reg.a, expected_a);
+        assert_eq!(cpu.reg.f, expected_flags);
+    }
+
+    fn test_op_andr(inst: &[u8], src:Register)
+    {
+        test_op_and(&inst, get_register8_setter(src), 1);
+    }
+
+    fn test_op_andm(inst: &[u8])
+    {
+        test_op_and(&inst, get_memory_HL_setter(0x5431), 2);
+    }
+
+    fn test_op_xor<T>(inst: &[u8], set_src:T, cycleCount:u8)
+        where T: Fn(&mut Cpu, &mut Ram, u8)
+    {
+        let mut cpu = Cpu::new();
+        let mut ram = get_ram();
+        load_into_ram(&mut ram, inst);
+
+        // Evaluates to zero case (except self reference)
+        cpu.reg.a = 0xAA;
+        set_src(&mut cpu, &mut ram, 0x55);
+        let self_referenced = cpu.reg.a != 0xAA;
+        let expected_a = if self_referenced {0} else {0xFF};
+        let expected_flags = if self_referenced {Regs::ZERO_FLAG} 
+                             else {0};
+
+        let cycles = cpu.execute_instruction(&mut ram);
+        assert_eq!(cycles, cycleCount);
+        assert_eq!(cpu.reg.pc, 1);
+        assert_eq!(cpu.reg.a, expected_a);
+        assert_eq!(cpu.reg.f, expected_flags);
+
+        // Non zero case.
+        cpu = Cpu::new();
+        cpu.reg.a = 0xFF;
+        set_src(&mut cpu, &mut ram, 0x0F);
+        let expected_a = if self_referenced {0} else {0xF0};
+        let expected_flags = if self_referenced {Regs::ZERO_FLAG} else {0};
+
+        cpu.execute_instruction(&mut ram);
+        assert_eq!(cpu.reg.a, expected_a);
+        assert_eq!(cpu.reg.f, expected_flags);
+    }
+
+    fn test_op_xorr(inst: &[u8], src:Register)
+    {
+        test_op_xor(&inst, get_register8_setter(src), 1);
+    }
+
+    fn test_op_xorm(inst: &[u8])
+    {
+        test_op_xor(&inst, get_memory_HL_setter(0xFF), 1);
     }
 
     #[test]
@@ -3023,5 +3147,101 @@ mod test {
     fn cpu_0x9F()
     {
         test_op_sbcr(&[0x9F], Register::A);
+    }
+
+    #[test]
+    fn cpu_0xA0()
+    {
+        test_op_andr(&[0xA0], Register::B);
+    }
+
+    #[test]
+    fn cpu_0xA1()
+    {
+        test_op_andr(&[0xA1], Register::C);
+    }
+
+    #[test]
+    fn cpu_0xA2()
+    {
+        test_op_andr(&[0xA2], Register::D);
+    }
+
+    #[test]
+    fn cpu_0xA3()
+    {
+        test_op_andr(&[0xA3], Register::E);
+    }
+
+    #[test]
+    fn cpu_0xA4()
+    {
+        test_op_andr(&[0xA4], Register::H);
+    }
+
+    #[test]
+    fn cpu_0xA5()
+    {
+        test_op_andr(&[0xA5], Register::L);
+    }
+
+    #[test]
+    fn cpu_0xA6()
+    {
+        test_op_andm(&[0xA6]);
+    }
+
+    #[test]
+    fn cpu_0xA7()
+    {
+        test_op_andr(&[0xA7], Register::A);
+    }
+
+    #[test]
+    fn cpu_0xA8()
+    {
+        test_op_xorr(&[0xA8], Register::B);
+    }
+
+    #[test]
+    fn cpu_0xA9()
+    {
+        test_op_xorr(&[0xA9], Register::C);
+    }
+
+    #[test]
+    fn cpu_0xAA()
+    {
+        test_op_xorr(&[0xAA], Register::D);
+    }
+
+    #[test]
+    fn cpu_0xAB()
+    {
+        test_op_xorr(&[0xAB], Register::E);
+    }
+
+    #[test]
+    fn cpu_0xAC()
+    {
+        test_op_xorr(&[0xAC], Register::H);
+    }
+
+    #[test]
+    fn cpu_0xAD()
+    {
+        test_op_xorr(&[0xAD], Register::L);
+    }
+
+    #[test]
+    fn cpu_0xAE()
+    {
+        test_op_xorm(&[0xAE]);
+    }
+
+    #[test]
+    fn cpu_0xAF()
+    {
+        test_op_xorr(&[0xAF], Register::A);
     }
 }
