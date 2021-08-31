@@ -438,8 +438,56 @@ impl Cpu {
                     self.reg.f |= Regs::ZERO_FLAG;
                 }
             },
+
+            AddI => {
+                let initial = self.reg.a;
+                let addend = data[1];
+                self.reg.a  = self.reg.a.wrapping_add(addend);
+                
+                // clear flags
+                self.reg.f = 0;
+
+                // Check for carry flag
+                if self.reg.a < initial {
+                    self.reg.f |= Regs::CARRY_FLAG;
+                }
+
+                // Check for the half carry flag
+                if (initial ^ addend) & 0x10 != (self.reg.a & 0x10) {
+                    self.reg.f |= Regs::HCARRY_FLAG;
+                }
+
+                // Check for the zero flag
+                if self.reg.a == 0 {
+                    self.reg.f |= Regs::ZERO_FLAG;
+                }
+            }
+
             AddCM => {
                 let initial = bus.bus_read8(self.reg.read16(Register::HL) as usize);
+                let addend =  (self.reg.f & Regs::CARRY_FLAG) >> 4;
+                self.reg.a  = initial.wrapping_add(addend);
+                
+                self.reg.f = 0;
+
+                // Check for carry flag
+                if self.reg.a < initial {
+                    self.reg.f |= Regs::CARRY_FLAG;
+                }
+
+                // Check for the half carry flag
+                if (initial ^ addend) & 0x10 != (self.reg.a & 0x10) {
+                    self.reg.f |= Regs::HCARRY_FLAG;
+                }
+
+                // Check for the zero flag
+                if self.reg.a == 0 {
+                    self.reg.f |= Regs::ZERO_FLAG;
+                }
+            }
+
+            AddCI => {
+                let initial = data[1];
                 let addend =  (self.reg.f & Regs::CARRY_FLAG) >> 4;
                 self.reg.a  = initial.wrapping_add(addend);
                 
@@ -687,6 +735,22 @@ impl Cpu {
                 }
             },
 
+            Jp{cond} => {
+                if self.test_condition(*cond){
+                    self.reg.pc = LittleEndian::read_u16(&data[1..]);
+                    self.busy_cycles += 1;
+                }
+            },
+
+            Call{cond} => {
+                if self.test_condition(*cond) {
+                    self.reg.sp = self.reg.sp.wrapping_sub(2);
+                    bus.bus_write16(self.reg.sp as usize, self.reg.pc);
+                    self.reg.pc = LittleEndian::read_u16(&data[1..]);
+                    self.busy_cycles += 3;
+                }
+            },
+
             Ret{cond} => {
                 if self.test_condition(*cond) {
                     let target = bus.bus_read16(self.reg.sp as usize);
@@ -696,6 +760,13 @@ impl Cpu {
                 }
             }
 
+            Rst{index} => {
+                // Push the PC to the stack.
+                self.reg.sp = self.reg.sp.wrapping_sub(2);
+                bus.bus_write16(self.reg.sp as usize, self.reg.pc);
+                // Jump to the index location.
+                self.reg.pc = *index as u16 * 8;
+            },
 
             LdMR16Mv{add} => {
                 let addr = self.reg.read16(Register::HL);
@@ -733,6 +804,16 @@ impl Cpu {
                 self.reg.f &= Regs::ZERO_FLAG | Regs::CARRY_FLAG;
                 self.reg.f ^= Regs::CARRY_FLAG;
             },
+
+            Pop{dst} => {
+                self.reg.write16(*dst, bus.bus_read16(self.reg.sp as usize));
+                self.reg.sp += 2;
+            },
+
+            Push{src} => {
+                self.reg.sp = self.reg.sp.wrapping_sub(2);
+                &bus.bus_write16(self.reg.sp as usize, self.reg.read16(*src));
+            }
 
             _ => panic!("not implemented")
         }
@@ -1237,9 +1318,9 @@ const INSTRUCTION_TABLE: [Instruction;256] = [
     Instruction{op:Operation::Pop{dst:Register::BC},            length:1, cycles:3},
     Instruction{op:Operation::Jp{cond:JumpCondition::Nz},       length:3, cycles:3},
     Instruction{op:Operation::Jp{cond:JumpCondition::Always},   length:3, cycles:3},
-    Instruction{op:Operation::Call{cond:JumpCondition::Nz},     length:1, cycles:3},
+    Instruction{op:Operation::Call{cond:JumpCondition::Nz},     length:3, cycles:3},
     Instruction{op:Operation::Push{src:Register::BC},           length:1, cycles:4},
-    Instruction{op:Operation::AddI,                             length:1, cycles:2},
+    Instruction{op:Operation::AddI,                             length:2, cycles:2},
     Instruction{op:Operation::Rst{index:0},                     length:1, cycles:4},
     Instruction{op:Operation::Ret{cond:JumpCondition::Z},       length:1, cycles:2},
     Instruction{op:Operation::Ret{cond:JumpCondition::Always},  length:1, cycles:2},
@@ -1335,8 +1416,16 @@ mod test {
     
     fn get_register8_setter(target:Register) -> impl Fn(&mut Cpu, &mut Ram, u8)
     {
-        move |cpu:&mut Cpu, ram:&mut Ram, value:u8| {
+        move |cpu:&mut Cpu, _:&mut Ram, value:u8| {
             cpu.reg.write8(target, value);
+        }
+    }
+
+    fn get_immediate_u8_setter(pc_offset:u8) -> impl Fn(&mut Cpu, &mut Ram, u8)
+    {
+        move |cpu:&mut Cpu, ram:&mut Ram, value:u8| {
+            let target =cpu.reg.pc + pc_offset as u16;
+            ram.bus_write8(target as usize, value);
         }
     }
 
@@ -1540,28 +1629,34 @@ mod test {
         assert_eq!(cpu.reg.f, Regs::CARRY_FLAG | Regs::HCARRY_FLAG);
     }
 
-    fn test_op_addr(inst: &[u8], src:Register)
+    fn test_op_add<T>(inst: &[u8], set_src:T, cycle_count:u8)
+        where T: Fn(&mut Cpu, &mut Ram, u8)
     {
         let mut cpu = Cpu::new();
         let mut ram = get_ram();
         load_into_ram(&mut ram, &inst);
+        cpu.reg.a = 1;
+        set_src(&mut cpu, &mut ram, 0);
+        let self_reference = cpu.reg.a != 1;
 
         // Set all flags, to verify they change
         cpu.reg.f = 0xFF;
         cpu.reg.a = 0x00;
-        cpu.reg.write8(src, 0);
+        set_src(&mut cpu, &mut ram, 0);
 
         let cycles = cpu.execute_instruction(&mut ram);
-        assert_eq!(cycles, 1);
-        assert_eq!(cpu.reg.pc, 1);
+        assert_eq!(cycles, cycle_count);
+        assert_eq!(cpu.reg.pc, inst.len() as u16);
         assert_eq!(cpu.reg.a, 0);
         assert_eq!(cpu.reg.f, Regs::ZERO_FLAG);
 
         cpu = Cpu::new();
         cpu.reg.a = 0xFF;
+
+
         // Deal with case where dst and src are the same.
-        let expected = if src != Register::A {
-            cpu.reg.write8(src, 0xF);
+        let expected = if self_reference == false {
+            set_src(&mut cpu, &mut ram, 0xF);
             0x0E
         } else { 0xFE };
 
@@ -1569,35 +1664,58 @@ mod test {
         assert_eq!(cpu.reg.a, expected);
         assert_eq!(cpu.reg.f, Regs::CARRY_FLAG | Regs::HCARRY_FLAG);
         
-        if src != Register::A
+        if self_reference == false
         {
             cpu = Cpu::new();
             cpu.reg.a = 0x02;
-            cpu.reg.write8(src, 0x2E);
+            set_src(&mut cpu, &mut ram, 0x2E);
             cpu.execute_instruction(&mut ram);
             assert_eq!(cpu.reg.a, 0x30);
             assert_eq!(cpu.reg.f, Regs::HCARRY_FLAG);
         }
     }
 
-    fn test_op_addcr(inst: &[u8], src:Register)
+    fn test_op_addr(inst: &[u8], src:Register)
+    {
+        test_op_add(&inst, get_register8_setter(src), 1);
+    }
+
+    fn test_op_addi(inst: &[u8])
+    {
+        test_op_add(&inst, get_immediate_u8_setter(1), 2);
+    }
+
+    fn test_op_addc<T>(inst: &[u8], set_src:T, cycle_count:u8)
+        where T: Fn(&mut Cpu, &mut Ram, u8)
     {
         let mut cpu = Cpu::new();
         let mut ram = get_ram();
-
         load_into_ram(&mut ram, &inst);
+        set_src(&mut cpu, &mut ram, 1);
+        let self_reference = cpu.reg.a != 0;
 
         // set the carry flag
-        cpu.reg.write8(src, 0xFF);
+        cpu.reg.a = 0;
+        set_src(&mut cpu, &mut ram, 0xFF);
         cpu.reg.f = Regs::CARRY_FLAG;
 
-        if src != Register::A{
+        if !self_reference{
             cpu.reg.a = 23; // Just a nonzero value.
         }
         let cycles = cpu.execute_instruction(&mut ram);
-        assert_eq!(cpu.reg.pc, 1);
-        assert_eq!(cycles, 1);
+        assert_eq!(cpu.reg.pc, inst.len() as u16);
+        assert_eq!(cycles, cycle_count);
         assert_eq!(cpu.reg.a, 0);
+    }
+
+    fn test_op_addcr(inst: &[u8], src:Register)
+    {
+        test_op_addc(&inst, get_register8_setter(src), 1);
+    }
+
+    fn test_op_addci(inst: &[u8])
+    {
+        test_op_addc(&inst, get_immediate_u8_setter(1), 2);
     }
 
     fn test_op_ldRM(inst: &[u8], dst:Register, src:Register, addr: u16, value: u8)
@@ -1946,6 +2064,136 @@ mod test {
             assert_eq!(cpu.reg.pc, 1);
             assert_eq!(cpu.reg.sp, stack_ptr);
         }
+    }
+
+    fn test_op_pop(inst: &[u8], dst:Register)
+    {
+        let mut cpu = Cpu::new();
+        let mut ram = get_ram();
+        load_into_ram(&mut ram, inst);
+
+        // place a value into memory at the stack pointer address
+        let address = 0x1234;
+        let value = 0xBEEF;
+        cpu.reg.sp = address;
+        ram.bus_write16(address as usize, value);
+
+        let cycles = cpu.execute_instruction(&mut ram);
+
+        // 3 cycles, 1 byte long, stack increases by 2, dst contains value from ram.
+        assert_eq!(cycles, 3);
+        assert_eq!(cpu.reg.pc, 1);
+        assert_eq!(cpu.reg.sp, address + 2);
+        assert_eq!(cpu.reg.read16(dst), value);
+    }
+    
+    fn test_op_jp(inst: &[u8], cond:JumpCondition)
+    {
+        let mut cpu = Cpu::new();
+        let mut ram = get_ram();
+        load_into_ram(&mut ram, &inst);
+        assert_eq!(inst.len(), 3);
+        
+        // set the jump condition, and setup the stack and jump address
+        cpu.set_jump_condition(cond);
+        let jump_addr = LittleEndian::read_u16(&inst[1..]);
+
+        // Execute the code.
+        let cycles = cpu.execute_instruction(&mut ram);
+
+        // Should take 4 cycles and jump to the immediate address
+        assert_eq!(cycles, 4);
+        assert_eq!(cpu.reg.pc, jump_addr);
+
+        // If the jump condition can be cleared, test the no branch case.
+        cpu = Cpu::new();
+        if cpu.clear_jump_condition(cond) {
+            let cycles = cpu.execute_instruction(&mut ram);
+
+            // Only 3 cycles if no branch is taken.
+            assert_eq!(cycles, 3);
+            assert_eq!(cpu.reg.pc, 3);
+        }
+    }
+
+    fn test_op_call(inst: &[u8], cond:JumpCondition)
+    {
+        let mut cpu = Cpu::new();
+        let mut ram = get_ram();
+        load_into_ram(&mut ram, &inst);
+        assert_eq!(inst.len(), 3);
+        let jump_addr = LittleEndian::read_u16(&inst[1..]);
+        
+        // set the jump condition, and setup the stack and jump address
+        cpu.set_jump_condition(cond);
+        let initial_sp = 5;
+        cpu.reg.sp = initial_sp;
+
+        // Execute the code.
+        let cycles = cpu.execute_instruction(&mut ram);
+
+        // Must take 6 cycles and jump to the immediate address.
+        // The stack pointer must decrease by 2.
+        // The program counter value must be on the stack.
+        assert_eq!(cycles, 6);
+        assert_eq!(cpu.reg.pc, jump_addr);
+        assert_eq!(cpu.reg.sp, initial_sp - 2);
+        assert_eq!(ram.bus_read16(cpu.reg.sp as usize), 3);
+
+        // If the jump condition can be cleared, test the no branch case.
+        cpu = Cpu::new();
+        cpu.reg.sp = initial_sp;
+        if cpu.clear_jump_condition(cond) {
+            let cycles = cpu.execute_instruction(&mut ram);
+
+            // Only 3 cycles if no branch is taken, no jump,
+            // and the stack pointer remains unchanged.
+            assert_eq!(cycles, 3);
+            assert_eq!(cpu.reg.pc, 3);
+            assert_eq!(cpu.reg.sp, initial_sp);
+        }
+    }
+
+    fn test_op_push(inst: &[u8], src:Register)
+    {
+        let mut cpu = Cpu::new();
+        let mut ram = get_ram();
+        load_into_ram(&mut ram, inst);
+
+        // place a value into register and init stack pointer
+        let address = 0x1234;
+        let value = 0xBEEF;
+        cpu.reg.sp = address;
+        cpu.reg.write16(src, value);
+
+        let cycles = cpu.execute_instruction(&mut ram);
+
+        // 4 cycles, 1 byte long, stack decreases by 2, ram contains register value.
+        assert_eq!(cycles, 4);
+        assert_eq!(cpu.reg.pc, 1);
+        assert_eq!(cpu.reg.sp, address - 2);
+        assert_eq!(ram.bus_read16(cpu.reg.sp as usize), value);
+    }
+
+    fn test_op_rst(inst: &[u8], index: u8)
+    {
+        let mut cpu = Cpu::new();
+        let mut ram = get_ram();
+        load_into_ram(&mut ram, inst);
+
+        // Set the stack pointer
+        let initial_stack = 10;
+        let expected_pc:u16 = index as u16 * 8;
+        cpu.reg.sp = initial_stack;
+
+        cpu.execute_instruction(&mut ram);
+
+        // Stack pointer push back 2 bytes.
+        // Stack must contain program counter after instruction
+        // PC must to to 8 byte indexed location in zero page.
+        assert_eq!(cpu.reg.sp, initial_stack - 2);
+        assert_eq!(ram.bus_read16(cpu.reg.sp as usize), 1);
+        assert_eq!(cpu.reg.pc, expected_pc);
     }
 
     #[test]
@@ -3603,5 +3851,96 @@ mod test {
     {
         // Return on not zero.
         test_op_ret(&[0xC0], JumpCondition::Nz);
+    }
+
+    #[test]
+    fn cpu_0xC1()
+    {
+        test_op_pop(&[0xC1], Register::BC);
+    }
+
+    #[test]
+    fn cpu_0xC2()
+    {
+        test_op_jp(&[0xC2, 1, 3], JumpCondition::Nz);
+    }
+
+    #[test]
+    fn cpu_0xC3()
+    {
+        test_op_jp(&[0xC3, 2, 4], JumpCondition::Always);
+    }
+
+    #[test]
+    fn cpu_0xC4()
+    {
+        test_op_call(&[0xC4, 83, 34], JumpCondition::Nz);
+    }
+
+    #[test]
+    fn cpu_0xC5()
+    {
+        test_op_push(&[0xC5], Register::BC);
+    }
+
+    #[test]
+    fn cpu_0xC6()
+    {
+        test_op_addi(&[0xC6, 00]);
+    }
+
+    #[test]
+    fn cpu_0xC7()
+    {
+        test_op_rst(&[0xC7], 0);
+    }
+
+    #[test]
+    fn cpu_0xC8()
+    {
+        test_op_ret(&[0xC8], JumpCondition::Z);
+    }
+
+    #[test]
+    fn cpu_0xC9()
+    {
+        test_op_ret(&[0xC9], JumpCondition::Always);
+    }
+
+    #[test]
+    fn cpu_0xCA()
+    {
+        test_op_jp(&[0xCA, 3, 4], JumpCondition::Z);
+    }
+
+    #[test]
+    #[ignore]
+    fn cpu_0xCB()
+    {
+        // TODO this is going to be a giant pile of tests, not a single test...
+    }
+
+    #[test]
+    fn cpu_0xCC()
+    {
+        test_op_call(&[0xCC, 32, 23],  JumpCondition::Z);
+    }
+
+    #[test]
+    fn cpu_0xCD()
+    {
+        test_op_call(&[0xCD, 0xFF, 0xEE],  JumpCondition::Always);
+    }
+
+    #[test]
+    fn cpu_0xCE()
+    {
+        test_op_addci(&[0xCE, 0]);
+    }
+
+    #[test]
+    fn cpu_0xCF()
+    {
+        test_op_rst(&[0xCF], 1);
     }
 }
