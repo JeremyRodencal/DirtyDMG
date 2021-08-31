@@ -150,6 +150,17 @@ impl Cpu {
         return value;
     }
 
+    fn test_condition(&mut self, cond:JumpCondition) -> bool
+    {
+        match cond {
+            JumpCondition::Always => true,
+            JumpCondition::Z =>  self.reg.f & Regs::ZERO_FLAG  != 0,
+            JumpCondition::Nz => self.reg.f & Regs::ZERO_FLAG  == 0,
+            JumpCondition::C =>  self.reg.f & Regs::CARRY_FLAG != 0,
+            JumpCondition::Nc => self.reg.f & Regs::CARRY_FLAG == 0,
+        }
+    }
+
     fn execute_instruction(&mut self, bus:&mut impl BusRW) -> u8
     {
         // Read the opcode, fetch the instruction details, and read in the entire instruction.
@@ -668,20 +679,23 @@ impl Cpu {
             },
 
             Jr{cond} => {
-                let take_branch = match cond {
-                    JumpCondition::Always => true,
-                    JumpCondition::Z =>  self.reg.f & Regs::ZERO_FLAG  != 0,
-                    JumpCondition::Nz => self.reg.f & Regs::ZERO_FLAG  == 0,
-                    JumpCondition::C =>  self.reg.f & Regs::CARRY_FLAG != 0,
-                    JumpCondition::Nc => self.reg.f & Regs::CARRY_FLAG == 0,
-                };
-                if take_branch {
+                if self.test_condition(*cond) {
                     // get the signed jump offset, then add it to the program counter.
                     let jump_offset = data[1] as i8;
                     self.reg.pc = self.reg.pc.wrapping_add(jump_offset as u16);
                     self.busy_cycles += 1;
                 }
             },
+
+            Ret{cond} => {
+                if self.test_condition(*cond) {
+                    let target = bus.bus_read16(self.reg.sp as usize);
+                    self.reg.pc = target;
+                    self.reg.sp += 2;
+                    self.busy_cycles += 3;
+                }
+            }
+
 
             LdMR16Mv{add} => {
                 let addr = self.reg.read16(Register::HL);
@@ -726,6 +740,7 @@ impl Cpu {
 }
 
 #[allow(dead_code)]
+#[derive(Clone, Copy)]
 enum JumpCondition {
     Always, // Always jump
     Z,      // Jump if zero flag set
@@ -793,34 +808,50 @@ enum Operation {
     AddR{src:Register},
     // Add a byte addressed by HL into the accumulator
     AddM,
+    // Add an immediate byte to the accumulator
+    AddI,
     // Add a register and the carry flag to the accumulator
     AddCR{src:Register},
-    // Add a byte addressed by HL into the accumulator
+    // Add a byte addressed by HL and the carry flag to the accumulator
     AddCM,
+    // Add an immediate byte and the carry flag to the accumulator
+    AddCI,
     // Subtract a register from the accumulator
     SubR{src:Register},
     // Subtract memory locaton address by HL and the carry flag from the accumulator.
     SubM,
+    // Subtract an immediate byte from the accumulator
+    SubI,
     // Subtract a register and the carry flag from the accumulator
     SbcR{src:Register},
     // Subtract value in memory addressed by HL and the carry flag from the accumulator.
     SbcM,
+    // Subtract an imediate value and the carry flag from the accumulator
+    SbcI,
     // Bitwise AND the accumulator against a register.
     AndR{src:Register},
     // Bitwise AND the accumulator against a memory value addressed by HL.
     AndM,
+    // Bitwise AND the accumulator agains an immediate value.
+    AndI,
     // Bitwise XOR the accumulator against a register.
     XorR{src:Register},
     // Bitwise XOR the accumulator against a memory value addressed by HL.
     XorM,
+    // Bitwise XOR the accumulator against an immeidate value.
+    XorI,
     // Bitwise OR the accumulator against a register.
     OrR{src:Register},
     // Bitwise XOR the accumulator against a memory value addressed by HL.
     OrM,
+    // Bitwise OR the accumulator against an immediate value.
+    OrI,
     // Compare a register against the accumulator
     CpR{src:Register},
     // Compare a memory location addressed by HL to the accumulator.
     CpM,
+    // Compare an immediate value to the accumulator.
+    CpI,
 
     // Correct binary coded decimal.
     Daa,
@@ -834,6 +865,19 @@ enum Operation {
 
     // Jump relative
     Jr{cond: JumpCondition},
+    // Jump
+    Jp{cond: JumpCondition},
+    // Return
+    Ret{cond: JumpCondition},
+    // Call a routine
+    Call{cond: JumpCondition},
+    // Reset to a a handler in zero page.
+    Rst{index: u8},
+
+    // Pushes a 16 bit register onto the stack
+    Push{src: Register},
+    // Pops the stack into a 16 bit register.
+    Pop{dst: Register}
 }
 
 #[allow(dead_code)]
@@ -1189,22 +1233,22 @@ const INSTRUCTION_TABLE: [Instruction;256] = [
     Instruction{op:Operation::CpR{src:Register::A}, length:1, cycles:1},
 
     // 0xCX
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Ret{cond:JumpCondition::Nz},      length:1, cycles:2},
+    Instruction{op:Operation::Pop{dst:Register::BC},            length:1, cycles:3},
+    Instruction{op:Operation::Jp{cond:JumpCondition::Nz},       length:3, cycles:3},
+    Instruction{op:Operation::Jp{cond:JumpCondition::Always},   length:3, cycles:3},
+    Instruction{op:Operation::Call{cond:JumpCondition::Nz},     length:1, cycles:3},
+    Instruction{op:Operation::Push{src:Register::BC},           length:1, cycles:4},
+    Instruction{op:Operation::AddI,                             length:1, cycles:2},
+    Instruction{op:Operation::Rst{index:0},                     length:1, cycles:4},
+    Instruction{op:Operation::Ret{cond:JumpCondition::Z},       length:1, cycles:2},
+    Instruction{op:Operation::Ret{cond:JumpCondition::Always},  length:1, cycles:2},
+    Instruction{op:Operation::Jp{cond:JumpCondition::Z},        length:3, cycles:3},
+    Instruction{op:Operation::Nop, length:1, cycles:1}, // TODO giant pile of CB instructions!
+    Instruction{op:Operation::Call{cond:JumpCondition::Z},      length:3, cycles:3},
+    Instruction{op:Operation::Call{cond:JumpCondition::Always}, length:3, cycles:3},
+    Instruction{op:Operation::AddCI,                            length:2, cycles:2},
+    Instruction{op:Operation::Rst{index:1},                     length:1, cycles:4},
 
     // 0xDX
     Instruction{op:Operation::Nop, length:1, cycles:1},
@@ -1293,6 +1337,31 @@ mod test {
     {
         move |cpu:&mut Cpu, ram:&mut Ram, value:u8| {
             cpu.reg.write8(target, value);
+        }
+    }
+
+    // Test helpers for the cpu.
+    impl Cpu{
+        fn set_jump_condition(&mut self, cond:JumpCondition)
+        {
+            match cond {
+                JumpCondition::Always => {},
+                JumpCondition::Z  => {self.reg.f |= Regs::ZERO_FLAG},
+                JumpCondition::Nz => {self.reg.f &= !Regs::ZERO_FLAG},
+                JumpCondition::C  => {self.reg.f |= Regs::CARRY_FLAG},
+                JumpCondition::Nc  => {self.reg.f &= !Regs::CARRY_FLAG},
+            };
+        }
+
+        fn clear_jump_condition(&mut self, cond:JumpCondition) -> bool
+        {
+            match cond {
+                JumpCondition::Always => false,
+                JumpCondition::Nz  => {self.reg.f |= Regs::ZERO_FLAG;  true},
+                JumpCondition::Z => {self.reg.f &= !Regs::ZERO_FLAG;   true},
+                JumpCondition::Nc  => {self.reg.f |= Regs::CARRY_FLAG; true},
+                JumpCondition::C  => {self.reg.f &= !Regs::CARRY_FLAG; true},
+            }
         }
     }
 
@@ -1841,6 +1910,42 @@ mod test {
     fn test_op_cpm(inst: &[u8])
     {
         test_op_cp(&inst, get_memory_HL_setter(234), 2);
+    }
+
+    fn test_op_ret(inst: &[u8], cond:JumpCondition)
+    {
+        let mut cpu = Cpu::new();
+        let mut ram = get_ram();
+        load_into_ram(&mut ram, &inst);
+
+        // set the jump condition, and setup the stack and jump address
+        cpu.set_jump_condition(cond);
+        let stack_ptr = 0x6;
+        let jump_addr = 0xCAFE;
+        cpu.reg.write16(Register::SP, stack_ptr);
+        ram.bus_write16(stack_ptr as usize, jump_addr);
+
+        // Execute the code.
+        let cycles = cpu.execute_instruction(&mut ram);
+
+        // Should take 5 cycles and jump to the address on the stack.
+        assert_eq!(cycles, 5);
+        assert_eq!(cpu.reg.pc, jump_addr);
+        assert_eq!(cpu.reg.sp, stack_ptr + 2);
+
+        // If the jump condition can be cleared, test the no branch case.
+        cpu = Cpu::new();
+        if cpu.clear_jump_condition(cond) {
+            // Set the 
+            cpu.reg.write16(Register::SP, stack_ptr);
+            ram.bus_write16(stack_ptr as usize, jump_addr);
+
+            let cycles = cpu.execute_instruction(&mut ram);
+
+            assert_eq!(cycles, 2);
+            assert_eq!(cpu.reg.pc, 1);
+            assert_eq!(cpu.reg.sp, stack_ptr);
+        }
     }
 
     #[test]
@@ -3491,5 +3596,12 @@ mod test {
     fn cpu_0xBF()
     {
         test_op_cpr(&[0xBF], Register::A);
+    }
+
+    #[test]
+    fn cpu_0xC0()
+    {
+        // Return on not zero.
+        test_op_ret(&[0xC0], JumpCondition::Nz);
     }
 }
