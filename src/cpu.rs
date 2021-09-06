@@ -532,6 +532,29 @@ impl Cpu {
                 }
             }
 
+            SubI => {
+                let minuend = self.reg.a;
+                let sub = data[1];
+                self.reg.a = self.reg.a.wrapping_sub(sub);
+
+                self.reg.f = Regs::SUB_FLAG;
+
+                // Check for carry flag
+                if self.reg.a > minuend {
+                    self.reg.f |= Regs::CARRY_FLAG;
+                }
+
+                // Check for the half carry flag
+                if (self.reg.a << 4) > (minuend << 4){
+                    self.reg.f |= Regs::HCARRY_FLAG;
+                }
+
+                // Check for the zero flag
+                if self.reg.a == 0 {
+                    self.reg.f |= Regs::ZERO_FLAG;
+                }
+            }
+
             SubM => {
                 let minuend = self.reg.a;
                 let sub = bus.bus_read8(self.reg.read16(Register::HL) as usize);
@@ -587,6 +610,34 @@ impl Cpu {
                 // Should set HCARRY and CARRY if subtracting 256?
                 let minuend = self.reg.a;
                 let mut sub = bus.bus_read8(self.reg.read16(Register::HL) as usize);
+                if self.reg.f & Regs::CARRY_FLAG != 0 {
+                    sub = sub.wrapping_add(1);
+                }
+                self.reg.a = self.reg.a.wrapping_sub(sub);
+
+                self.reg.f = Regs::SUB_FLAG;
+
+                // Check for carry flag
+                if self.reg.a > minuend {
+                    self.reg.f |= Regs::CARRY_FLAG;
+                }
+
+                // Check for the half carry flag
+                if (self.reg.a << 4) > (minuend << 4){
+                    self.reg.f |= Regs::HCARRY_FLAG;
+                }
+
+                // Check for the zero flag
+                if self.reg.a == 0 {
+                    self.reg.f |= Regs::ZERO_FLAG;
+                }
+            },
+
+            SbcI => {
+                // May not be accurate enough?
+                // Should set HCARRY and CARRY if subtracting 256?
+                let minuend = self.reg.a;
+                let mut sub = data[1];
                 if self.reg.f & Regs::CARRY_FLAG != 0 {
                     sub = sub.wrapping_add(1);
                 }
@@ -758,7 +809,14 @@ impl Cpu {
                     self.reg.sp += 2;
                     self.busy_cycles += 3;
                 }
-            }
+            },
+
+            Reti => {
+                let target = bus.bus_read16(self.reg.sp as usize);
+                self.reg.pc = target;
+                self.reg.sp += 2;
+                // TODO enable interrupts.
+            },
 
             Rst{index} => {
                 // Push the PC to the stack.
@@ -950,6 +1008,8 @@ enum Operation {
     Jp{cond: JumpCondition},
     // Return
     Ret{cond: JumpCondition},
+    // Return from interrupt
+    Reti,
     // Call a routine
     Call{cond: JumpCondition},
     // Reset to a a handler in zero page.
@@ -1332,22 +1392,22 @@ const INSTRUCTION_TABLE: [Instruction;256] = [
     Instruction{op:Operation::Rst{index:1},                     length:1, cycles:4},
 
     // 0xDX
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::Ret{cond:JumpCondition::Nc},  length:1, cycles:2},
+    Instruction{op:Operation::Pop{dst:Register::DE},        length:1, cycles:3},
+    Instruction{op:Operation::Jp{cond:JumpCondition::Nc},   length:3, cycles:3},
+    Instruction{op:Operation::Nop, length:1, cycles:1}, // Crash?
+    Instruction{op:Operation::Call{cond:JumpCondition::Nc}, length:3, cycles:3},
+    Instruction{op:Operation::Push{src:Register::DE},       length:1, cycles:4},
+    Instruction{op:Operation::SubI,                         length:2, cycles:2},
+    Instruction{op:Operation::Rst{index:2},                 length:1, cycles:4},
+    Instruction{op:Operation::Ret{cond:JumpCondition::C},   length:1, cycles:2},
+    Instruction{op:Operation::Reti,                         length:1, cycles:4},
+    Instruction{op:Operation::Jp{cond:JumpCondition::C},    length:3, cycles:3},
+    Instruction{op:Operation::Nop, length:1, cycles:1}, // Crash?
+    Instruction{op:Operation::Call{cond:JumpCondition::C},  length:3, cycles:3}, 
+    Instruction{op:Operation::Nop, length:1, cycles:1}, // Crash?
+    Instruction{op:Operation::SbcI,                         length:2, cycles:2},
+    Instruction{op:Operation::Rst{index:3},                 length:1, cycles:4},
 
     // 0xEX
     Instruction{op:Operation::Nop, length:1, cycles:1},
@@ -1752,26 +1812,38 @@ mod test {
         assert_eq!(cpu.reg.f, flags);
     }
 
-    fn test_op_subr(inst: &[u8], src:Register)
+    fn test_op_sub<T>(inst: &[u8], set_src:T, cycle_count:u8)
+        where T: Fn(&mut Cpu, &mut Ram, u8)
     {
         let mut cpu = Cpu::new();
         let mut ram = get_ram();
         load_into_ram(&mut ram, &inst);
         
-        cpu.reg.write8(src, 2);
-        cpu.reg.a = if src != Register::A {0} else {2};
-        let result = if src == Register::A {0} else {0xFE};
-        let expected_flags = if src == Register::A {
+        set_src(&mut cpu, &mut ram, 2);
+        let self_reference = cpu.reg.a == 2;
+        cpu.reg.a = if !self_reference {0} else {2};
+        let result = if self_reference {0} else {0xFE};
+        let expected_flags = if self_reference {
             Regs::ZERO_FLAG |Regs::SUB_FLAG
         } else {
             Regs::CARRY_FLAG | Regs::HCARRY_FLAG | Regs::SUB_FLAG
         };
         let cycles = cpu.execute_instruction(&mut ram);
 
-        assert_eq!(cycles, 1);
-        assert_eq!(cpu.reg.pc, 1);
+        assert_eq!(cycles, cycle_count);
+        assert_eq!(cpu.reg.pc, inst.len() as u16);
         assert_eq!(cpu.reg.a, result);
         assert_eq!(cpu.reg.f, expected_flags);
+    }
+
+    fn test_op_subr(inst: &[u8], src:Register)
+    {
+        test_op_sub(&inst, get_register8_setter(src), 1);
+    }
+
+    fn test_op_subi(inst: &[u8])
+    {
+        test_op_sub(&inst, get_immediate_u8_setter(1), 2);
     }
 
     fn test_op_sbc<T>(inst:&[u8], set_src:T, cycles:u8)
@@ -1792,7 +1864,7 @@ mod test {
         let executed_cycles = cpu.execute_instruction(&mut ram);
 
         assert_eq!(executed_cycles, cycles);
-        assert_eq!(cpu.reg.pc, 1);
+        assert_eq!(cpu.reg.pc, inst.len() as u16);
 
         if self_referenced {
             // Self referenced case is 
@@ -3942,5 +4014,118 @@ mod test {
     fn cpu_0xCF()
     {
         test_op_rst(&[0xCF], 1);
+    }
+
+    #[test]
+    fn cpu_0xD0()
+    {
+        test_op_ret(&[0xD0], JumpCondition::Nc);
+    }
+
+    #[test]
+    fn cpu_0xD1()
+    {  
+         test_op_pop(&[0xD1], Register::DE);
+    }
+
+    #[test]
+    fn cpu_0xD2()
+    {
+        test_op_jp(&[0xD2, 1, 2], JumpCondition::Nc);
+    }
+
+    #[test]
+    fn cpu_0xD3()
+    {
+        // Crash?
+    }
+
+    #[test]
+    fn cpu_0xD4()
+    {
+        test_op_call(&[0xD4, 1, 2], JumpCondition::Nc);
+    }
+
+    #[test]
+    fn cpu_0xD5()
+    {
+        test_op_push(&[0xD5], Register::DE);
+    }
+
+    #[test]
+    fn cpu_0xD6()
+    {
+        test_op_subi(&[0xD6, 0]);
+    }
+
+    #[test]
+    fn cpu_0xD7()
+    {
+        test_op_rst(&[0xD7], 2);
+    }
+
+    #[test]
+    fn cpu_0xD8()
+    {
+        test_op_ret(&[0xD8], JumpCondition::C);
+    }
+
+    #[test]
+    #[ignore]
+    fn cpu_0xD9()
+    {
+        let mut cpu = Cpu::new();
+        let mut ram = get_ram();
+        load_into_ram(&mut ram, &[0xD9]);
+
+        // Write a return address to the tip of the stack pointer
+        let ret_addr = 0x123;
+        let stack_ptr:u16 = 0x200;
+        ram.bus_write16(stack_ptr as usize, ret_addr);
+        cpu.reg.sp = stack_ptr;
+
+        let cycles = cpu.execute_instruction(&mut ram);
+
+        assert_eq!(cycles, 4);
+        assert_eq!(cpu.reg.pc, ret_addr);
+        assert_eq!(cpu.reg.sp, stack_ptr + 2);
+        // TODO make sure that this enables interrupts again.
+        assert_eq!(true, false);
+    }
+
+    #[test]
+    fn cpu_0xDA()
+    {
+        test_op_jp(&[0xDA, 0, 0], JumpCondition::C);
+    }
+
+    #[test]
+    fn cpu_0xDB()
+    {
+        // Crash?
+    }
+
+    #[test]
+    fn cpu_0xDC()
+    {
+        test_op_call(&[0xDC, 0, 0], JumpCondition::C);
+    }
+
+    #[test]
+    fn cpu_0xDD()
+    {
+        // Crash?
+    }
+
+    #[test]
+    fn cpu_0xDE()
+    {
+        test_op_sbc(&[0xDE, 0], get_immediate_u8_setter(1), 2);
+    }
+
+    #[test]
+    fn cpu_0xDF()
+    {
+        test_op_rst(&[0xDF], 3);
     }
 }
