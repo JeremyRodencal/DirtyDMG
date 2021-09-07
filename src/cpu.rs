@@ -255,12 +255,53 @@ impl Cpu {
             LdMI16R{src} => {
                 let address = LittleEndian::read_u16(&data[1..]) as usize;
                 bus.bus_write8( address, self.reg.read8(*src));
-            }
+            },
+
+            // Load a register from zero page ram addressed by an 8 bit immediate value
+            LdRZI{dst} => {
+                let address = data[1] as usize + 0xFF00;
+                self.reg.write8(*dst, bus.bus_read8(address));
+            },
+
+            // Load a register from zero page ram addressed by an 8 bit register.
+            LdRZR{src, dst} => {
+                let address = self.reg.read8(*src) as usize + 0xFF00;
+                self.reg.write8(*dst, bus.bus_read8(address));
+            },
+
+            // Load the stack pointer with the content of HL.
+            LdSpHl => {
+                self.reg.sp = self.reg.read16(Register::HL);
+            },
+
+            // Load a register with the value in memory addressed by a 16 bit immediate.
+            LdRMI16{dst} => {
+                let address = LittleEndian::read_u16(&data[1..]) as usize;
+                self.reg.write8(*dst, bus.bus_read8(address));
+            },
 
             // Increment a 16 bit register.
             IncR16{dst} => {
                 let i = self.reg.read16(*dst).wrapping_add(1);
                 self.reg.write16(*dst, i);
+            },
+
+            // Add a signed 8 bit immediate to the stack pointer.
+            StkMvI => {
+                let initial = self.reg.sp;
+                let addend = data[1] as i8 as u16;
+                let result = initial.wrapping_add(addend);
+                self.reg.write16(Register::HL, result);
+
+                self.reg.f = 0;
+                // Half carry only occurs on most significant byte.
+                if (initial ^ addend) & 0x1000 != result & 0x1000 {
+                    self.reg.f = self.reg.f | Regs::HCARRY_FLAG;
+                }
+                // Set carry flag if needed.
+                if result < initial {
+                    self.reg.f = self.reg.f | Regs::CARRY_FLAG;
+                }
             },
 
             // Increment an 8 bit register.
@@ -761,6 +802,14 @@ impl Cpu {
                 if self.reg.a == 0 {
                     self.reg.f |= Regs::ZERO_FLAG;
                 }
+            },
+
+            OrI => {
+                self.reg.a |= data[1];
+                self.reg.f = 0;
+                if self.reg.a == 0 {
+                    self.reg.f |= Regs::ZERO_FLAG;
+                }
             }
 
             CpR{src} => {
@@ -808,6 +857,29 @@ impl Cpu {
                     self.reg.f |= Regs::ZERO_FLAG;
                 }
             }
+
+            CpI => {
+                let minuend = self.reg.a;
+                let sub = data[1];
+                let result = self.reg.a.wrapping_sub(sub);
+
+                self.reg.f = Regs::SUB_FLAG;
+
+                // Check for carry flag
+                if result > minuend {
+                    self.reg.f |= Regs::CARRY_FLAG;
+                }
+
+                // Check for the half carry flag
+                if (result << 4) > (minuend << 4){
+                    self.reg.f |= Regs::HCARRY_FLAG;
+                }
+
+                // Check for the zero flag
+                if result == 0 {
+                    self.reg.f |= Regs::ZERO_FLAG;
+                }
+            },
 
             Rla => {
                 // Determine the carry in for bit zero.
@@ -979,8 +1051,18 @@ enum Operation {
     LdZIR{src: Register},
     // Store register into zero page memory addressed by an 8 bit register.
     LdZRR{dst: Register, src:Register},
+    // Load a register from zero page memory addressed by an 8 bit immediate value.
+    LdRZI{dst: Register},
+    // Load a register from zero page memory addressed by an 8 bit register.
+    LdRZR{dst: Register, src:Register},
+    // Load a register from 
+    LdRMI16{dst: Register},
     // Store a register into memory addressed by a 16 bit immediate value.
     LdMI16R{src: Register},
+    // Add a signed 8 bit immediate value to sp and store in HL.
+    StkMvI,
+    // Set the stack pointer to the value in HL.
+    LdSpHl,
 
     // Increment a 16 bit register.
     IncR16{dst:Register},
@@ -1086,7 +1168,12 @@ enum Operation {
     // Pushes a 16 bit register onto the stack
     Push{src: Register},
     // Pops the stack into a 16 bit register.
-    Pop{dst: Register}
+    Pop{dst: Register},
+
+    // Disable interrupts
+    Di,
+    // Enable interrupts
+    Ei,
 }
 
 #[allow(dead_code)]
@@ -1496,22 +1583,22 @@ const INSTRUCTION_TABLE: [Instruction;256] = [
     Instruction{op:Operation::Rst{index:5}, length:1, cycles:4},
 
     // 0xFX
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
-    Instruction{op:Operation::Nop, length:1, cycles:1},
+    Instruction{op:Operation::LdRZI{dst:Register::A}, length:2, cycles:3},
+    Instruction{op:Operation::Pop{dst:Register::AF}, length:1, cycles:3},
+    Instruction{op:Operation::LdRZR{dst:Register::A, src:Register::C}, length:1, cycles:2},
+    Instruction{op:Operation::Di, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1}, // Crash?
+    Instruction{op:Operation::Push{src:Register::AF}, length:1, cycles:4},
+    Instruction{op:Operation::OrI, length:2, cycles:2},
+    Instruction{op:Operation::Rst{index:6}, length:1, cycles:4},
+    Instruction{op:Operation::StkMvI, length:2, cycles:3},
+    Instruction{op:Operation::LdSpHl, length:1, cycles:2},
+    Instruction{op:Operation::LdRMI16{dst:Register::A}, length:3, cycles:4},
+    Instruction{op:Operation::Ei, length:1, cycles:1},
+    Instruction{op:Operation::Nop, length:1, cycles:1}, // Crash?
+    Instruction{op:Operation::Nop, length:1, cycles:1}, // Crash?
+    Instruction{op:Operation::CpI, length:2, cycles:2},
+    Instruction{op:Operation::Rst{index:7}, length:1, cycles:4},
 ];
 
 #[cfg(test)]
@@ -2099,7 +2186,7 @@ mod test {
 
         let cycles = cpu.execute_instruction(&mut ram);
         assert_eq!(cycles, cycleCount);
-        assert_eq!(cpu.reg.pc, 1);
+        assert_eq!(cpu.reg.pc, inst.len() as u16);
         assert_eq!(cpu.reg.a, expected_a);
         assert_eq!(cpu.reg.f, expected_flags);
 
@@ -2142,7 +2229,7 @@ mod test {
         let cycles = cpu.execute_instruction(&mut ram);
 
         assert_eq!(cycles, cycle_count);
-        assert_eq!(cpu.reg.pc, 1);
+        assert_eq!(cpu.reg.pc, inst.len() as u16);
         assert_eq!(cpu.reg.a, equal_value);
         assert_eq!(cpu.reg.f, expected_flags);
 
@@ -4360,5 +4447,171 @@ mod test {
     fn cpu_0xEF()
     {
         test_op_rst(&[0xEF], 5);
+    }
+
+    #[test]
+    fn cpu_0xF0()
+    {
+        // Ld A, (a8) // Zero page load.
+        let mut cpu = Cpu::new();
+        let mut ram = get_ram();
+        load_into_ram(&mut ram, &[0xF0, 0x35]);
+        let address = 0xFF35u16;
+        let value = 93;
+        ram.bus_write8(address as usize, value);
+
+        let cycles = cpu.execute_instruction(&mut ram);
+        
+        assert_eq!(cycles, 3);
+        assert_eq!(cpu.reg.pc, 2);
+        assert_eq!(cpu.reg.a, value);
+    }
+
+    #[test]
+    fn cpu_0xF1()
+    {
+        test_op_pop(&[0xF1], Register::AF);
+    }
+
+    #[test]
+    fn cpu_0xF2()
+    {
+        // Ld A, (c) // Zero page load.
+        let mut cpu = Cpu::new();
+        let mut ram = get_ram();
+        load_into_ram(&mut ram, &[0xF2]);
+        let address = 0xFF35u16;
+        let value = 93;
+        ram.bus_write8(address as usize, value);
+        cpu.reg.c = 0x35;
+
+        let cycles = cpu.execute_instruction(&mut ram);
+        
+        assert_eq!(cycles, 2);
+        assert_eq!(cpu.reg.pc, 1);
+        assert_eq!(cpu.reg.a, value);
+    }
+
+    #[test]
+    #[ignore]
+    fn cpu_0xF3()
+    {
+        // TODO Diable interrupts.
+    }
+
+    #[test]
+    fn cpu_0xF4()
+    {
+        // Crash?
+    }
+
+    #[test]
+    fn cpu_0xF5()
+    {
+        test_op_push(&[0xF5], Register::AF);
+    }
+
+    #[test]
+    fn cpu_0xF6()
+    {
+        test_op_or(&[0xF6, 0], get_immediate_u8_setter(1), 2);
+    }
+
+    #[test]
+    fn cpu_0xF7()
+    {
+        test_op_rst(&[0xF7], 6);
+    }
+
+    #[test]
+    fn cpu_0xF8()
+    {
+        let mut cpu = Cpu::new();
+        let mut ram = get_ram();
+        load_into_ram(&mut ram, &[0xF8, 0x80]);
+
+        cpu.reg.sp = 0x100;
+        cpu.reg.f = 0xFF;
+        let cycles = cpu.execute_instruction(&mut ram);
+
+        assert_eq!(cycles, 3);
+        assert_eq!(cpu.reg.pc, 2);
+        assert_eq!(cpu.reg.read16(Register::HL), 0x100 - 128);
+        assert_eq!(cpu.reg.f, Regs::CARRY_FLAG | Regs::HCARRY_FLAG);
+
+        cpu = Cpu::new();
+        load_into_ram(&mut ram, &[0xF8, 0x7F]);
+        cpu.reg.sp = 0x100;
+
+        cpu.execute_instruction(&mut ram);
+
+        assert_eq!(cpu.reg.read16(Register::HL),  0x100 + 0x7F);
+        assert_eq!(cpu.reg.f, 0);
+    }
+
+    #[test]
+    fn cpu_0xF9()
+    {
+        let mut cpu = Cpu::new();
+        let mut ram = get_ram();
+        load_into_ram(&mut ram, &[0xF9]);
+
+        let value = 0x5432;
+        cpu.reg.write16(Register::HL, value);
+
+        let cycles = cpu.execute_instruction(&mut ram);
+
+        assert_eq!(cycles, 2);
+        assert_eq!(cpu.reg.pc, 1);
+        assert_eq!(cpu.reg.sp, value);
+    }
+
+    #[test]
+    fn cpu_0xFA()
+    {
+        let mut cpu = Cpu::new();
+        let mut ram = get_ram();
+        load_into_ram(&mut ram, &[0xFA, 0x01, 0x02]);
+        let address = 0x0201 as usize;
+
+        let value = 23;
+        ram.bus_write8(address, value);
+
+        let cycles = cpu.execute_instruction(&mut ram);
+
+        assert_eq!(cycles, 4);
+        assert_eq!(cpu.reg.pc, 3);
+        assert_eq!(cpu.reg.a, value);
+    }
+
+    #[test]
+    #[ignore]
+    fn cpu_0xFB()
+    {
+        // TODO enable interrupts.
+    }
+
+    #[test]
+    fn cpu_0xFC()
+    {
+        // crash ?
+    }
+
+    #[test]
+    fn cpu_0xFD()
+    {
+        // crash ?
+    }
+
+    #[test]
+    fn cpu_0xFE()
+    {
+        test_op_cp(&[0xFE, 0], get_immediate_u8_setter(1), 2);
+    }
+
+    #[test]
+    fn cpu_0xFF()
+    {
+        test_op_rst(&[0xFF], 7);
     }
 }
