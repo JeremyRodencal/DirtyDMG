@@ -116,9 +116,14 @@ impl Regs {
 
 #[allow(dead_code)]
 pub struct Cpu {
+    /// CPU registers.
     reg: Regs,
-    busy_cycles: u32, // Number of cycles until ready to execute
-    cycle: u64,       // Current cycle number
+    /// Tracks cycles until the cpu will be ready to execute again.
+    busy_cycles: u32, 
+    /// Tracks the current cycle number.
+    cycle: u64,       
+    /// Tracks if interrupts are enabled or disabled.
+    isr_en: bool      
 }
 
 #[allow(dead_code)]
@@ -127,7 +132,8 @@ impl Cpu {
         Cpu{
             reg:Regs::new(),
             busy_cycles: 0,
-            cycle: 0
+            cycle: 0,
+            isr_en: false,
         }
     }
 
@@ -1001,6 +1007,14 @@ impl Cpu {
             Push{src} => {
                 self.reg.sp = self.reg.sp.wrapping_sub(2);
                 &bus.bus_write16(self.reg.sp as usize, self.reg.read16(*src));
+            },
+
+            Di => {
+                self.isr_en = false;
+            },
+
+            Ei => {
+                self.isr_en = true;
             }
 
             _ => panic!("not implemented")
@@ -4493,10 +4507,18 @@ mod test {
     }
 
     #[test]
-    #[ignore]
     fn cpu_0xF3()
     {
-        // TODO Diable interrupts.
+        let mut cpu = Cpu::new();
+        let mut ram = get_ram();
+        load_into_ram(&mut ram, &[0xF3]);
+
+        cpu.isr_en = true;
+        let cycles = cpu.execute_instruction(&mut ram);
+
+        assert_eq!(cycles, 1);
+        assert_eq!(cpu.reg.pc, 1);
+        assert_eq!(cpu.isr_en, false);
     }
 
     #[test]
@@ -4585,10 +4607,18 @@ mod test {
     }
 
     #[test]
-    #[ignore]
     fn cpu_0xFB()
     {
-        // TODO enable interrupts.
+        let mut cpu = Cpu::new();
+        let mut ram = get_ram();
+        load_into_ram(&mut ram, &[0xFB]);
+
+        cpu.isr_en = false;
+        let cycles = cpu.execute_instruction(&mut ram);
+
+        assert_eq!(cycles, 1);
+        assert_eq!(cpu.reg.pc, 1);
+        assert_eq!(cpu.isr_en, true);
     }
 
     #[test]
