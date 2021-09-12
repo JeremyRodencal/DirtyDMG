@@ -3,23 +3,29 @@ use std::cell::RefCell;
 use crate::cpu::{Cpu};
 use crate::ram::Ram;
 use crate::bus::{Bus, BusItem};
+use crate::interrupt::InterruptStatus;
 
 pub struct Dmg{
     pub cpu:Cpu,
     ram: Rc<RefCell<Ram>>,
-    bus: Bus
+    bus: Bus,
+    isr: Rc<RefCell<InterruptStatus>>,
 }
 
 impl Dmg {
 
     pub fn new() -> Dmg {
         let ram = Rc::new(RefCell::new(Ram::new(0x2000, 0xC000)));
+        let isr = Rc::new(RefCell::new(InterruptStatus::new()));
         let mut bus = Bus::new();
         bus.add_item(BusItem::new(0xC000, 0xDFFF, ram.clone()));
+        bus.add_item(BusItem::new(0xFF0F, 0xFF0F, isr.clone()));
+        bus.add_item(BusItem::new(0xFFFF, 0xFFFF, isr.clone()));
         Dmg {
             cpu: Cpu::new(),
             ram,
-            bus 
+            bus,
+            isr
         }
     }
 

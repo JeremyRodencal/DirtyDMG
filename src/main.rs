@@ -2,6 +2,7 @@ mod dmg;
 mod cpu;
 mod bus;
 mod ram;
+mod interrupt;
 
 use dmg::Dmg;
 
