@@ -948,10 +948,13 @@ impl Cpu {
             },
 
             Reti => {
+                // Pop the stack and jump to the address.
                 let target = bus.bus_read16(self.reg.sp as usize);
                 self.reg.pc = target;
                 self.reg.sp += 2;
-                // TODO enable interrupts.
+
+                // Enable interrupts
+                self.isr_en = true;
             },
 
             Rst{index} => {
@@ -4240,7 +4243,6 @@ mod test {
     }
 
     #[test]
-    #[ignore]
     fn cpu_0xD9()
     {
         let mut cpu = Cpu::new();
@@ -4252,14 +4254,14 @@ mod test {
         let stack_ptr:u16 = 0x200;
         ram.bus_write16(stack_ptr as usize, ret_addr);
         cpu.reg.sp = stack_ptr;
+        cpu.isr_en = false;
 
         let cycles = cpu.execute_instruction(&mut ram);
 
         assert_eq!(cycles, 4);
         assert_eq!(cpu.reg.pc, ret_addr);
         assert_eq!(cpu.reg.sp, stack_ptr + 2);
-        // TODO make sure that this enables interrupts again.
-        assert_eq!(true, false);
+        assert_eq!(cpu.isr_en, true);
     }
 
     #[test]
