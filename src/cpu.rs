@@ -1020,6 +1020,237 @@ impl Cpu {
                 self.isr_en = true;
             }
 
+            //0xCB instructions.
+            CBExt => {
+                // 0xCB instructions are very well structured.
+                // The low 3 bits are the argument register/address,
+                // and the high 8 bits are the operation code.
+                let opcode = (data[1] & 0b_1111_1000) >> 3;
+                let target = CB_TARGET_TABLE[(data[1] & 0b_0000_0111) as usize];
+                let operation = 
+                    // when target is HL, that means this is a memory based operation.
+                    if target == Register::HL {
+                        match opcode {
+                            0x00 => RlcM,
+                            0x01 => RrcM,
+                            0x02 => RlM,
+                            0x03 => RrM,
+                            0x04 => SlaM,
+                            0x05 => SraM,
+                            0x06 => SwapM,
+                            0x07 => SrlM,
+                            0x08 => BitM{index:0},
+                            0x09 => BitM{index:1},
+                            0x0A => BitM{index:2},
+                            0x0B => BitM{index:3},
+                            0x0C => BitM{index:4},
+                            0x0D => BitM{index:5},
+                            0x0E => BitM{index:6},
+                            0x0F => BitM{index:7},
+                            0x10 => ResM{index:0},
+                            0x11 => ResM{index:1},
+                            0x12 => ResM{index:2},
+                            0x13 => ResM{index:3},
+                            0x14 => ResM{index:4},
+                            0x15 => ResM{index:5},
+                            0x16 => ResM{index:6},
+                            0x17 => ResM{index:7},
+                            0x18 => SetM{index:0},
+                            0x19 => SetM{index:1},
+                            0x1A => SetM{index:2},
+                            0x1B => SetM{index:3},
+                            0x1C => SetM{index:4},
+                            0x1D => SetM{index:5},
+                            0x1E => SetM{index:6},
+                            0x1F => SetM{index:7},
+                            _ => panic!("not implemented")
+                        }
+                    }
+                    // target is a normal register.
+                    else {
+                        match opcode {
+                            0x00 => RlcR{src:target},
+                            0x01 => RrcR{src:target},
+                            0x02 => RlR{src:target},
+                            0x03 => RrR{src:target},
+                            0x04 => SlaR{src:target},
+                            0x05 => SraR{src:target},
+                            0x06 => SwapR{src:target},
+                            0x07 => SrlR{src:target},
+                            0x08 => BitR{index:0, src:target},
+                            0x09 => BitR{index:1, src:target},
+                            0x0A => BitR{index:2, src:target},
+                            0x0B => BitR{index:3, src:target},
+                            0x0C => BitR{index:4, src:target},
+                            0x0D => BitR{index:5, src:target},
+                            0x0E => BitR{index:6, src:target},
+                            0x0F => BitR{index:7, src:target},
+                            0x10 => ResR{index:0, src:target},
+                            0x11 => ResR{index:1, src:target},
+                            0x12 => ResR{index:2, src:target},
+                            0x13 => ResR{index:3, src:target},
+                            0x14 => ResR{index:4, src:target},
+                            0x15 => ResR{index:5, src:target},
+                            0x16 => ResR{index:6, src:target},
+                            0x17 => ResR{index:7, src:target},
+                            0x18 => SetR{index:0, src:target},
+                            0x19 => SetR{index:1, src:target},
+                            0x1A => SetR{index:2, src:target},
+                            0x1B => SetR{index:3, src:target},
+                            0x1C => SetR{index:4, src:target},
+                            0x1D => SetR{index:5, src:target},
+                            0x1E => SetR{index:6, src:target},
+                            0x1F => SetR{index:7, src:target},
+                            _ => panic!("not implemented")
+                        }
+                    };
+
+                // Execute the decoded operation.
+                self.execute_operation(bus, data, &operation);
+            }
+
+            RlcR{src} => {
+                let val = self.reg.read8(*src);
+
+                // Clear, then set the zero flag if needed.
+                self.reg.f = 
+                    if val == 0 {Regs::ZERO_FLAG}
+                    else {0};
+                
+                self.reg.write8(*src, val.rotate_left(1));
+
+                // Check for the carry flag
+                if (val & 0x80) != 0 {
+                    self.reg.f |= Regs::CARRY_FLAG;
+                }
+            },
+
+            RlcM => {
+                let addr = self.reg.read16(Register::HL) as usize;
+                let val = bus.bus_read8(addr);
+
+                // Clear, then set the zero flag if needed.
+                self.reg.f = 
+                    if val == 0 {Regs::ZERO_FLAG}
+                    else {0};
+                
+                bus.bus_write8(addr, val.rotate_left(1));
+
+                // Check for the carry flag
+                if (val & 0x80) != 0 {
+                    self.reg.f |= Regs::CARRY_FLAG;
+                }
+
+                self.busy_cycles += 2;
+            },
+
+            RrcR{src} => {
+                let val = self.reg.read8(*src);
+
+                // Clear, then set the zero flag if needed.
+                self.reg.f = 
+                    if val == 0 {Regs::ZERO_FLAG}
+                    else {0};
+                
+                self.reg.write8(*src, val.rotate_right(1));
+
+                // Check for the carry flag
+                if (val & 0x01  ) != 0 {
+                    self.reg.f |= Regs::CARRY_FLAG;
+                }
+            },
+
+            RrcM => {
+                let addr = self.reg.read16(Register::HL) as usize;
+                let val = bus.bus_read8(addr);
+
+                // Clear, then set the zero flag if needed.
+                self.reg.f = 
+                    if val == 0 {Regs::ZERO_FLAG}
+                    else {0};
+                
+                bus.bus_write8(addr, val.rotate_right(1));
+
+                // Check for the carry flag
+                if (val & 0x80) != 0 {
+                    self.reg.f |= Regs::CARRY_FLAG;
+                }
+
+                self.busy_cycles += 2;
+            },
+
+            RlR{src} => {
+                let val = self.reg.read8(*src);
+                self.reg.write8( *src, 
+                    (val << 1) | ((self.reg.f & Regs::CARRY_FLAG) >> 4));
+
+                // Clear, then set the zero flag if needed.
+                self.reg.f = 
+                    if val == 0 {Regs::ZERO_FLAG}
+                    else {0};
+
+                // Check for the carry flag
+                if (val & 0x80) != 0 {
+                    self.reg.f |= Regs::CARRY_FLAG;
+                }
+            },
+
+            RlM => {
+                let addr = self.reg.read16(Register::HL) as usize;
+                let val = bus.bus_read8(addr);
+                bus.bus_write8(addr, 
+                    (val << 1) | ((self.reg.f & Regs::CARRY_FLAG) >> 4));
+
+                // Clear, then set the zero flag if needed.
+                self.reg.f = 
+                    if val == 0 {Regs::ZERO_FLAG}
+                    else {0};
+
+                // Check for the carry flag
+                if (val & 0x80) != 0 {
+                    self.reg.f |= Regs::CARRY_FLAG;
+                }
+
+                self.busy_cycles += 2;
+            },
+
+            RrR{src} => {
+                let val = self.reg.read8(*src);
+                self.reg.write8(*src, 
+                    val >> 1 |
+                    ((self.reg.f & Regs::CARRY_FLAG) << 3)
+                );
+
+                // Clear, then set the zero flag if needed.
+                self.reg.f = 
+                    if val == 0 {Regs::ZERO_FLAG}
+                    else {0};
+
+                // Check for the carry flag
+                if (val & 0x01  ) != 0 {
+                    self.reg.f |= Regs::CARRY_FLAG;
+                }
+            },
+
+            RrM => {
+                let addr = self.reg.read16(Register::HL) as usize;
+                let val = bus.bus_read8(addr);
+                bus.bus_write8(addr, 
+                    val >> 1 |
+                    ((self.reg.f & Regs::CARRY_FLAG) << 3)
+                );
+
+                // Clear, then set the zero flag if needed.
+                self.reg.f = 
+                    if val == 0 {Regs::ZERO_FLAG}
+                    else {0};
+
+                // Check for the carry flag
+                if (val & 0x01  ) != 0 {
+                    self.reg.f |= Regs::CARRY_FLAG;
+                }
+            },
+
             _ => panic!("not implemented")
         }
     }
@@ -1191,6 +1422,42 @@ enum Operation {
     Di,
     // Enable interrupts
     Ei,
+
+    // A placeholder operation for the 0xCB series of multibyte instructions.
+    CBExt,
+
+    RlcR{src:Register},
+    RlcM,
+
+    RrcR{src:Register},
+    RrcM,
+
+    RlR{src:Register},
+    RlM,
+
+    RrR{src:Register},
+    RrM,
+
+    SlaR{src:Register},
+    SlaM,
+
+    SraR{src:Register},
+    SraM,
+
+    SwapR{src:Register},
+    SwapM,
+
+    SrlR{src:Register},
+    SrlM,
+
+    BitR{index:u8, src:Register},
+    BitM{index:u8},
+
+    ResR{index:u8, src:Register},
+    ResM{index:u8},
+
+    SetR{index:u8, src:Register},
+    SetM{index:u8},
 }
 
 #[allow(dead_code)]
@@ -1199,6 +1466,18 @@ struct Instruction{
     length:u8,
     cycles:u8,
 }
+
+#[allow(dead_code)]
+const CB_TARGET_TABLE: [Register;8] = [
+    Register::B,
+    Register::C,
+    Register::D,
+    Register::E,
+    Register::H,
+    Register::L,
+    Register::HL, // special case, memory addressed by HL.
+    Register::A,
+];
 
 #[allow(dead_code)]
 const INSTRUCTION_TABLE: [Instruction;256] = [
@@ -1557,7 +1836,7 @@ const INSTRUCTION_TABLE: [Instruction;256] = [
     Instruction{op:Operation::Ret{cond:JumpCondition::Z},       length:1, cycles:2},
     Instruction{op:Operation::Ret{cond:JumpCondition::Always},  length:1, cycles:2},
     Instruction{op:Operation::Jp{cond:JumpCondition::Z},        length:3, cycles:3},
-    Instruction{op:Operation::Nop, length:1, cycles:1}, // TODO giant pile of CB instructions!
+    Instruction{op:Operation::CBExt,                            length:2, cycles:2},
     Instruction{op:Operation::Call{cond:JumpCondition::Z},      length:3, cycles:3},
     Instruction{op:Operation::Call{cond:JumpCondition::Always}, length:3, cycles:3},
     Instruction{op:Operation::AddCI,                            length:2, cycles:2},
@@ -1645,11 +1924,26 @@ mod test {
             ram.bus_write8(address, value);
         }
     }
+
+    fn get_memory_HL_getter(address:usize) -> impl Fn(&mut Cpu, &mut Ram) -> u8
+    {
+        move |cpu:&mut Cpu, ram: &mut Ram| {
+            cpu.reg.write16(Register::HL, address as u16);
+            ram.bus_read8(address)
+        }
+    }
     
     fn get_register8_setter(target:Register) -> impl Fn(&mut Cpu, &mut Ram, u8)
     {
         move |cpu:&mut Cpu, _:&mut Ram, value:u8| {
             cpu.reg.write8(target, value);
+        }
+    }
+
+    fn get_register8_getter(target:Register) -> impl Fn(&mut Cpu, &mut Ram) -> u8
+    {
+        move |cpu:&mut Cpu, _:&mut Ram| {
+            cpu.reg.read8(target)
         }
     }
 
@@ -2438,6 +2732,102 @@ mod test {
         assert_eq!(cpu.reg.sp, initial_stack - 2);
         assert_eq!(ram.bus_read16(cpu.reg.sp as usize), 1);
         assert_eq!(cpu.reg.pc, expected_pc);
+    }
+
+    fn test_op_rlc<S, G>(inst: &[u8], set: S, get: G, cycles: u8)
+        where S: Fn(&mut Cpu, &mut Ram, u8),
+              G: Fn(&mut Cpu, &mut Ram)->u8
+    {
+        let mut cpu = Cpu::new();
+        let mut ram = get_ram();
+        load_into_ram(&mut ram, inst);
+
+        /////// Test No Carry Flag Case ////////
+
+        // load a base value into the test value source.
+        let val = 0x18u8;
+        set(&mut cpu, &mut ram, val);
+
+        // Execute the code under test.
+        let cycles_count = cpu.execute_instruction(&mut ram);
+        let result_val = get(&mut cpu, &mut ram);
+
+        assert_eq!(cycles_count, cycles);
+        assert_eq!(cpu.reg.pc, 2);
+        assert_eq!(result_val, 0x30);
+        assert_eq!(cpu.reg.f, 0);
+
+        //////// Test Carry Flag Case ////////
+
+        // Reset the CPU
+        cpu = Cpu::new();
+
+        let val = 0x81;
+        set(&mut cpu, &mut ram, val);
+
+        cpu.execute_instruction(&mut ram);
+
+        let result_val = get(&mut cpu, &mut ram);
+
+        assert_eq!(result_val, 0x03);
+        assert_eq!(cpu.reg.f, Regs::CARRY_FLAG);
+
+        //////// Test Zero Flag Case ////////
+        cpu = Cpu::new();
+        set(&mut cpu, &mut ram, 0);
+
+        cpu.execute_instruction(&mut ram);
+
+        assert_eq!(get(&mut cpu, &mut ram), 0);
+        assert_eq!(cpu.reg.f, Regs::ZERO_FLAG);
+    }
+
+    fn test_op_rrc<S, G>(inst: &[u8], set: S, get: G, cycles: u8)
+        where S: Fn(&mut Cpu, &mut Ram, u8),
+              G: Fn(&mut Cpu, &mut Ram)->u8
+    {
+        let mut cpu = Cpu::new();
+        let mut ram = get_ram();
+        load_into_ram(&mut ram, inst);
+
+        /////// Test No Carry Flag Case ////////
+
+        // load a base value into the test value source.
+        let val = 0x18u8;
+        set(&mut cpu, &mut ram, val);
+
+        // Execute the code under test.
+        let cycles_count = cpu.execute_instruction(&mut ram);
+        let result_val = get(&mut cpu, &mut ram);
+
+        assert_eq!(cycles_count, cycles);
+        assert_eq!(cpu.reg.pc, 2);
+        assert_eq!(result_val, 0b_0000_1100);
+        assert_eq!(cpu.reg.f, 0);
+
+        //////// Test Carry Flag Case ////////
+
+        // Reset the CPU
+        cpu = Cpu::new();
+
+        let val = 0x81;
+        set(&mut cpu, &mut ram, val);
+
+        cpu.execute_instruction(&mut ram);
+
+        let result_val = get(&mut cpu, &mut ram);
+
+        assert_eq!(result_val, 0b_1100_0000);
+        assert_eq!(cpu.reg.f, Regs::CARRY_FLAG);
+
+        //////// Test Zero Flag Case ////////
+        cpu = Cpu::new();
+        set(&mut cpu, &mut ram, 0);
+
+        cpu.execute_instruction(&mut ram);
+
+        assert_eq!(get(&mut cpu, &mut ram), 0);
+        assert_eq!(cpu.reg.f, Regs::ZERO_FLAG);
     }
 
     #[test]
@@ -4157,12 +4547,7 @@ mod test {
         test_op_jp(&[0xCA, 3, 4], JumpCondition::Z);
     }
 
-    #[test]
-    #[ignore]
-    fn cpu_0xCB()
-    {
-        // TODO this is going to be a giant pile of tests, not a single test...
-    }
+    // The 0xCBXX family of instruction tests are after the single byte instructions.
 
     #[test]
     fn cpu_0xCC()
@@ -4645,5 +5030,53 @@ mod test {
     fn cpu_0xFF()
     {
         test_op_rst(&[0xFF], 7);
+    }
+
+    #[test]
+    fn cpu_0xCB_00_to_07()
+    {
+        for x in 0..8{
+            let target = CB_TARGET_TABLE[x as usize];
+            println!("Testing 0xCB{:02X}", x);
+
+            if target != Register::HL{
+                test_op_rlc(
+                    &[0xCB, x], 
+                    get_register8_setter(target), 
+                    get_register8_getter(target),
+                    2);
+            }
+            else {
+                test_op_rlc(
+                    &[0xCB, x], 
+                    get_memory_HL_setter(0x1234), 
+                    get_memory_HL_getter(0x1234),
+                    4);
+            }
+        }
+    }
+
+    #[test]
+    fn cpu_0xCB_08_to_0F()
+    {
+        for x in 8..16{
+            let target = CB_TARGET_TABLE[(x & 0x7) as usize];
+            println!("Testing 0xCB{:02X}", x);
+
+            if target != Register::HL{
+                test_op_rrc(
+                    &[0xCB, x], 
+                    get_register8_setter(target), 
+                    get_register8_getter(target),
+                    2);
+            }
+            else {
+                test_op_rrc(
+                    &[0xCB, x], 
+                    get_memory_HL_setter(0x1235), 
+                    get_memory_HL_getter(0x1235),
+                    4);
+            }
+        }
     }
 }
