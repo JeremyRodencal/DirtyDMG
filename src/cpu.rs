@@ -1172,7 +1172,7 @@ impl Cpu {
                 bus.bus_write8(addr, val.rotate_right(1));
 
                 // Check for the carry flag
-                if (val & 0x80) != 0 {
+                if (val & 0x01) != 0 {
                     self.reg.f |= Regs::CARRY_FLAG;
                 }
 
