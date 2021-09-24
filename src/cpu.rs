@@ -1249,6 +1249,181 @@ impl Cpu {
                 if (val & 0x01  ) != 0 {
                     self.reg.f |= Regs::CARRY_FLAG;
                 }
+
+                self.busy_cycles += 2;
+            },
+
+            SlaR{src} => {
+                let val = self.reg.read8(*src);
+                self.reg.write8( *src, val << 1);
+
+                // Clear, then set the zero flag if needed.
+                self.reg.f = 
+                    if val == 0 {Regs::ZERO_FLAG}
+                    else {0};
+
+                // Check for the carry flag
+                if (val & 0x80) != 0 {
+                    self.reg.f |= Regs::CARRY_FLAG;
+                }
+            },
+
+            SlaM => {
+                let addr = self.reg.read16(Register::HL) as usize;
+                let val = bus.bus_read8(addr);
+                bus.bus_write8(addr, val << 1);
+
+                // Clear, then set the zero flag if needed.
+                self.reg.f = 
+                    if val == 0 {Regs::ZERO_FLAG}
+                    else {0};
+
+                // Check for the carry flag
+                if (val & 0x80) != 0 {
+                    self.reg.f |= Regs::CARRY_FLAG;
+                }
+
+                self.busy_cycles += 2;
+            }
+
+            SraR{src} => {
+                let val = self.reg.read8(*src);
+                self.reg.write8( *src, (val >> 1) | (val & 0x80));
+
+                // Clear, then set the zero flag if needed.
+                self.reg.f = 
+                    if val == 0 {Regs::ZERO_FLAG}
+                    else {0};
+
+                // Check for the carry flag
+                if (val & 0x01) != 0 {
+                    self.reg.f |= Regs::CARRY_FLAG;
+                }
+            },
+
+            SraM => {
+                let addr = self.reg.read16(Register::HL) as usize;
+                let val = bus.bus_read8(addr);
+                bus.bus_write8(addr, (val >> 1) | (val & 0x80));
+
+                // Clear, then set the zero flag if needed.
+                self.reg.f = 
+                    if val == 0 {Regs::ZERO_FLAG}
+                    else {0};
+
+                // Check for the carry flag
+                if (val & 0x01) != 0 {
+                    self.reg.f |= Regs::CARRY_FLAG;
+                }
+
+                self.busy_cycles += 2;
+            },
+
+            SwapR{src} => {
+                let val = self.reg.read8(*src);
+                self.reg.write8( *src, (val >> 4) | (val << 4));
+
+                // Clear, then set the zero flag if needed.
+                self.reg.f = 
+                    if val == 0 {Regs::ZERO_FLAG}
+                    else {0};
+            },
+
+            SwapM => {
+                let addr = self.reg.read16(Register::HL) as usize;
+                let val = bus.bus_read8(addr);
+                bus.bus_write8(addr, (val >> 4) | (val << 4));
+
+                // Clear, then set the zero flag if needed.
+                self.reg.f = 
+                    if val == 0 {Regs::ZERO_FLAG}
+                    else {0};
+
+                self.busy_cycles += 2;
+            },
+
+            SrlR{src} => {
+                let val = self.reg.read8(*src);
+                self.reg.write8( *src, (val >> 1));
+
+                // Clear, then set the zero flag if needed.
+                self.reg.f = 
+                    if val == 0 {Regs::ZERO_FLAG}
+                    else {0};
+
+                // Check for the carry flag
+                if (val & 0x01) != 0 {
+                    self.reg.f |= Regs::CARRY_FLAG;
+                }
+            },
+
+            SrlM => {
+                let addr = self.reg.read16(Register::HL) as usize;
+                let val = bus.bus_read8(addr);
+                bus.bus_write8(addr, val >> 1);
+
+                // Clear, then set the zero flag if needed.
+                self.reg.f = 
+                    if val == 0 {Regs::ZERO_FLAG}
+                    else {0};
+
+                // Check for the carry flag
+                if (val & 0x01) != 0 {
+                    self.reg.f |= Regs::CARRY_FLAG;
+                }
+
+                self.busy_cycles += 2;
+            },
+            
+            BitR{index, src} => {
+                // retain the Carry flag, set the sub flag, clear all others.
+                self.reg.f &= Regs::CARRY_FLAG;
+                self.reg.f |= Regs::SUB_FLAG;
+
+                // set the zero flag if the index bit is not set.
+                let val = self.reg.read8(*src);
+                if (val & (1<<index)) == 0 {
+                    self.reg.f |= Regs::ZERO_FLAG;
+                }
+            },
+
+            BitM{index} => {
+                // retain the Carry flag, set the sub flag, clear all others.
+                self.reg.f &= Regs::CARRY_FLAG;
+                self.reg.f |= Regs::SUB_FLAG;
+
+                // set the zero flag if the index bit is not set.
+                let val = bus.bus_read8(self.reg.read16(Register::HL) as usize);
+                if (val & (1<<index)) == 0 {
+                    self.reg.f |= Regs::ZERO_FLAG;
+                }
+
+                self.busy_cycles += 2;
+            },
+
+            ResR{index, src} => {
+                let val = self.reg.read8(*src);
+                self.reg.write8(*src, val & !(1<<index));
+            },
+
+            ResM{index} => {
+                let addr = self.reg.read16(Register::HL) as usize;
+                let val = bus.bus_read8(addr);
+                bus.bus_write8(addr, val & !(1<<index));
+
+                self.busy_cycles += 2;
+            },
+
+            SetR{index, src} => {
+                let val = self.reg.read8(*src);
+                self.reg.write8(*src, val | (1<<index));
+            },
+
+            SetM{index} => {
+                let addr = self.reg.read16(Register::HL) as usize;
+                let val = bus.bus_read8(addr);
+                bus.bus_write8(addr, val | (1<<index));
+                self.busy_cycles += 2;
             },
 
             _ => panic!("not implemented")
@@ -1904,6 +2079,90 @@ mod test {
     use crate::bus::{BusRW};
     use crate::ram::Ram;
 
+    struct TestPack {
+        cpu: Cpu,
+        ram: Ram,
+    }
+
+    #[derive(Clone, Copy)]
+    enum AddressingMode {
+        Register{src:Register},
+        RegisterMem{src:Register, addr:usize},
+    }
+
+    impl TestPack {
+        /// Constructs a new test package with a fresh cpu and ram.
+        fn new() -> TestPack {
+            TestPack{
+                cpu: Cpu::new(),
+                ram: Ram::new(0x10000, 0),
+            }
+        }
+
+        /// Executes an instruction on the CPU
+        fn execute_instruction(&mut self) {
+            self.cpu.execute_instruction(&mut self.ram);
+        }
+
+        /// Checks the number of busy cycles on the cpu.
+        fn check_cycles(&self, expected: u8) {
+            assert_eq!(expected, self.cpu.busy_cycles as u8);
+        }
+
+        /// Checks the current program counter value.
+        fn check_length(&self, expected: u16) {
+            assert_eq!(expected, self.cpu.reg.pc);
+        }
+
+        /// Checks the current flags register
+        fn check_flags(&self, expected:u8) {
+            assert_eq!(expected, self.cpu.reg.f);
+        }
+        
+        /// Loads instruction data into address 0 of "ram".
+        fn load_instruction(&mut self, inst: &[u8]) {
+            let mut addr = 0;
+            for val in inst {
+                self.ram.bus_write8(addr, *val);
+                addr += 1;
+            }
+        }
+
+        /// Resets the cpu to default values.
+        fn reset_cpu(&mut self) {
+            self.cpu = Cpu::new();
+        }
+
+        /// Sets a value specified by the addressing mode.
+        fn set_value(&mut self, mode:AddressingMode, value:u8) {
+            match mode {
+                AddressingMode::Register{src} => {
+                    self.cpu.reg.write8(src, value);
+                },
+                AddressingMode::RegisterMem{src, addr} => {
+                    self.cpu.reg.write16(src, addr as u16);
+                    self.ram.bus_write8(
+                        self.cpu.reg.read16(src) as usize,
+                        value);
+                },
+            }
+        }
+
+        /// Gets a value specified by the addressing mode.
+        fn get_value(&mut self, mode:AddressingMode) -> u8{
+            match mode {
+                AddressingMode::Register{src} => {
+                    self.cpu.reg.read8(src)
+                },
+                AddressingMode::RegisterMem{src, addr} => {
+                    self.cpu.reg.write16(src, addr as u16);
+                    self.ram.bus_read8(
+                        self.cpu.reg.read16(src) as usize)
+                }
+            }
+        }
+    }
+
     fn get_ram() -> Ram {
         Ram::new(0x10000, 0)
     }
@@ -1954,6 +2213,17 @@ mod test {
             ram.bus_write8(target as usize, value);
         }
     }
+
+    const CB_ADDRESSING_MODES: [AddressingMode;8] = [ 
+        AddressingMode::Register{src:Register::B},
+        AddressingMode::Register{src:Register::C},
+        AddressingMode::Register{src:Register::D},
+        AddressingMode::Register{src:Register::E},
+        AddressingMode::Register{src:Register::H},
+        AddressingMode::Register{src:Register::L},
+        AddressingMode::RegisterMem{src:Register::HL, addr:0x4324},
+        AddressingMode::Register{src:Register::A},
+    ];
 
     // Test helpers for the cpu.
     impl Cpu{
@@ -2810,14 +3080,14 @@ mod test {
         // Reset the CPU
         cpu = Cpu::new();
 
-        let val = 0x81;
+        let val = 0x71;
         set(&mut cpu, &mut ram, val);
 
         cpu.execute_instruction(&mut ram);
 
         let result_val = get(&mut cpu, &mut ram);
 
-        assert_eq!(result_val, 0b_1100_0000);
+        assert_eq!(result_val, 0b_1011_1000);
         assert_eq!(cpu.reg.f, Regs::CARRY_FLAG);
 
         //////// Test Zero Flag Case ////////
@@ -2828,6 +3098,299 @@ mod test {
 
         assert_eq!(get(&mut cpu, &mut ram), 0);
         assert_eq!(cpu.reg.f, Regs::ZERO_FLAG);
+    }
+
+    fn test_op_rl(inst: &[u8], addrMode:AddressingMode, cycles:u8)
+    {
+        // Setup test state.
+        let mut tp = TestPack::new();
+        tp.load_instruction(inst);
+
+        // Carry in and out case.
+        let carry_out_val = 0b_1000_0100;
+        let expected_val = 0b_0000_1001;
+        tp.set_value(addrMode, carry_out_val);
+        tp.cpu.reg.f = Regs::CARRY_FLAG;
+
+        tp.execute_instruction();
+        tp.check_cycles(cycles);
+        tp.check_length(inst.len() as u16);
+
+        assert_eq!(tp.get_value(addrMode), expected_val);
+        assert_eq!(tp.cpu.reg.f, Regs::CARRY_FLAG);
+
+        // Carry in no carry out.
+        tp.reset_cpu();
+        let no_carry_out_val = 0b_0100_0100;
+        let expected_val = 0b_1000_1001;
+        tp.set_value(addrMode, no_carry_out_val);
+        tp.cpu.reg.f = Regs::CARRY_FLAG;
+
+        tp.execute_instruction();
+
+        assert_eq!(tp.get_value(addrMode), expected_val);
+        assert_eq!(tp.cpu.reg.f, 0);
+
+        // No Carry out or in.
+        tp.reset_cpu();
+        let no_carry_out_val = 0b_0100_0100;
+        let expected_val = 0b_1000_1000;
+        tp.set_value(addrMode, no_carry_out_val);
+
+        tp.execute_instruction();
+
+        assert_eq!(tp.get_value(addrMode), expected_val);
+        assert_eq!(tp.cpu.reg.f, 0);
+
+        // Zero case
+        tp.reset_cpu();
+        tp.set_value(addrMode, 0);
+        tp.execute_instruction();
+        assert_eq!(tp.cpu.reg.f, Regs::ZERO_FLAG);
+    }
+
+    fn test_op_rr(inst: &[u8], addrMode:AddressingMode, cycles:u8)
+    {
+        // Setup test state.
+        let mut tp = TestPack::new();
+        tp.load_instruction(inst);
+
+        // Carry in and out case.
+        let carry_out_val = 0b_1000_0001;
+        let expected_val = 0b_1100_0000;
+        tp.set_value(addrMode, carry_out_val);
+        tp.cpu.reg.f = Regs::CARRY_FLAG;
+
+        tp.execute_instruction();
+        tp.check_cycles(cycles);
+        tp.check_length(inst.len() as u16);
+
+        assert_eq!(tp.get_value(addrMode), expected_val);
+        assert_eq!(tp.cpu.reg.f, Regs::CARRY_FLAG);
+
+        // Carry in no carry out.
+        tp.reset_cpu();
+        let no_carry_out_val = 0b_0100_0100;
+        let expected_val = 0b_1010_0010;
+        tp.set_value(addrMode, no_carry_out_val);
+        tp.cpu.reg.f = Regs::CARRY_FLAG;
+
+        tp.execute_instruction();
+
+        assert_eq!(tp.get_value(addrMode), expected_val);
+        assert_eq!(tp.cpu.reg.f, 0);
+
+        // No Carry out or in.
+        tp.reset_cpu();
+        let no_carry_out_val = 0b_0100_0010;
+        let expected_val =     0b_0010_0001;
+        tp.set_value(addrMode, no_carry_out_val);
+
+        tp.execute_instruction();
+
+        assert_eq!(tp.get_value(addrMode), expected_val);
+        assert_eq!(tp.cpu.reg.f, 0);
+
+        // Zero case
+        tp.reset_cpu();
+        tp.set_value(addrMode, 0);
+        tp.execute_instruction();
+        assert_eq!(tp.cpu.reg.f, Regs::ZERO_FLAG);
+    }
+
+    fn test_op_sla(inst: &[u8], addrMode: AddressingMode, cycles:u8)
+    {
+        // Setup test state.
+        let mut tp = TestPack::new();
+        tp.load_instruction(inst);
+
+        // Carry out case.
+        let carry_out_val = 0b_1100_0000;
+        let expected_val = 0b_1000_0000;
+        tp.set_value(addrMode, carry_out_val);
+        tp.cpu.reg.f = Regs::CARRY_FLAG;
+
+        tp.execute_instruction();
+        tp.check_cycles(cycles);
+        tp.check_length(inst.len() as u16);
+
+        assert_eq!(tp.get_value(addrMode), expected_val);
+        assert_eq!(tp.cpu.reg.f, Regs::CARRY_FLAG);
+
+        // No carry out.
+        tp.reset_cpu();
+        let no_carry_out_val = 0b_0100_0110;
+        let expected_val = 0b_1000_1100;
+        tp.set_value(addrMode, no_carry_out_val);
+        tp.cpu.reg.f = Regs::CARRY_FLAG;
+
+        tp.execute_instruction();
+
+        assert_eq!(tp.get_value(addrMode), expected_val);
+        assert_eq!(tp.cpu.reg.f, 0);
+
+        // Zero case
+        tp.reset_cpu();
+        tp.set_value(addrMode, 0);
+        tp.execute_instruction();
+        assert_eq!(tp.cpu.reg.f, Regs::ZERO_FLAG);
+    }
+
+    fn test_op_sra(inst: &[u8], addrMode: AddressingMode, cycles:u8)
+    {
+        // Setup test state.
+        let mut tp = TestPack::new();
+        tp.load_instruction(inst);
+
+        // Carry out case, negative value case.
+        let carry_out_val = 0b_1000_0001;
+        let expected_val = 0b_1100_0000;
+        tp.set_value(addrMode, carry_out_val);
+
+        tp.execute_instruction();
+        tp.check_cycles(cycles);
+        tp.check_length(inst.len() as u16);
+
+        assert_eq!(tp.get_value(addrMode), expected_val);
+        assert_eq!(tp.cpu.reg.f, Regs::CARRY_FLAG);
+
+        // No carry out, positive value case.
+        tp.reset_cpu();
+        let no_carry_out_val = 0b_0100_0110;
+        let expected_val =     0b_0010_0011;
+        tp.set_value(addrMode, no_carry_out_val);
+        tp.cpu.reg.f = Regs::CARRY_FLAG;
+
+        tp.execute_instruction();
+
+        assert_eq!(tp.get_value(addrMode), expected_val);
+        assert_eq!(tp.cpu.reg.f, 0);
+
+        // Zero case
+        tp.reset_cpu();
+        tp.set_value(addrMode, 0);
+        tp.execute_instruction();
+        assert_eq!(tp.cpu.reg.f, Regs::ZERO_FLAG);
+    }
+
+    fn test_op_swap(inst: &[u8], addr_mode:AddressingMode, cycles:u8) {
+        // Create a test package and load the instruction.
+        let mut tp = TestPack::new();
+        tp.load_instruction(inst);
+
+        // Test non zero.
+        let value = 0xAB;
+        let expected = 0xBA;
+        tp.cpu.reg.f = 0xFF; // Only to make sure it is cleared.
+        tp.set_value(addr_mode, value);
+
+        tp.execute_instruction();
+        tp.check_cycles(cycles);
+        tp.check_length(inst.len() as u16);
+
+        assert_eq!(tp.get_value(addr_mode), expected);
+        assert_eq!(tp.cpu.reg.f, 0);
+
+        ///////
+        // Test zero
+        tp.reset_cpu();
+        tp.set_value(addr_mode, 0);
+
+        tp.execute_instruction();
+
+        assert_eq!(tp.get_value(addr_mode), 0);
+        assert_eq!(tp.cpu.reg.f, Regs::ZERO_FLAG);
+    }
+
+    fn test_op_srl(inst: &[u8], addrMode: AddressingMode, cycles:u8)
+    {
+        // Setup test state.
+        let mut tp = TestPack::new();
+        tp.load_instruction(inst);
+
+        // Carry out case
+        let carry_out_val = 0b_1000_0011;
+        let expected_val = 0b_0100_0001;
+        tp.set_value(addrMode, carry_out_val);
+
+        tp.execute_instruction();
+        tp.check_cycles(cycles);
+        tp.check_length(inst.len() as u16);
+
+        assert_eq!(tp.get_value(addrMode), expected_val);
+        assert_eq!(tp.cpu.reg.f, Regs::CARRY_FLAG);
+
+        // No carry out case
+        tp.reset_cpu();
+        let no_carry_out_val = 0b_0100_0110;
+        let expected_val =     0b_0010_0011;
+        tp.set_value(addrMode, no_carry_out_val);
+        tp.cpu.reg.f = Regs::CARRY_FLAG;
+
+        tp.execute_instruction();
+
+        assert_eq!(tp.get_value(addrMode), expected_val);
+        assert_eq!(tp.cpu.reg.f, 0);
+
+        // Zero case
+        tp.reset_cpu();
+        tp.set_value(addrMode, 0);
+        tp.execute_instruction();
+        assert_eq!(tp.cpu.reg.f, Regs::ZERO_FLAG);
+    }
+
+    fn test_op_bit(inst: &[u8], index:u8, addr_mode:AddressingMode, cycles:u8) {
+        // Setup test state.
+        let mut tp = TestPack::new();
+        tp.load_instruction(inst);
+
+        ////////
+        // Bit set case.
+        tp.set_value(addr_mode, 1<<index);
+        tp.cpu.reg.f = Regs::CARRY_FLAG; // only the check that it is not cleared.
+
+        tp.execute_instruction();
+
+        tp.check_cycles(cycles);
+        tp.check_length(inst.len() as u16);
+        tp.check_flags(Regs::SUB_FLAG | Regs::CARRY_FLAG);
+
+        ////////
+        // Bit cleared case
+        tp.reset_cpu();
+        tp.set_value(addr_mode, !(1<<index));
+
+        tp.execute_instruction();
+
+        tp.check_flags(Regs::SUB_FLAG | Regs::ZERO_FLAG);
+    }
+
+    fn test_op_res(inst: &[u8], index:u8, addr_mode:AddressingMode, cycles:u8)
+    {
+        let mut tp = TestPack::new();
+        tp.load_instruction(inst);
+
+        let value = 0xFF;
+        tp.set_value(addr_mode, value);
+
+        tp.execute_instruction();
+
+        tp.check_cycles(cycles);
+        tp.check_length(inst.len() as u16);
+        assert_eq!(tp.get_value(addr_mode), !(1<<index));
+    }
+
+    fn test_op_set(inst: &[u8], index:u8, addr_mode:AddressingMode, cycles:u8)
+    {
+        let mut tp = TestPack::new();
+        tp.load_instruction(inst);
+        tp.set_value(addr_mode, 0);
+
+        tp.execute_instruction();
+
+        tp.check_cycles(cycles);
+        tp.check_length(inst.len() as u16);
+        assert_eq!(tp.get_value(addr_mode), 1<<index);
     }
 
     #[test]
@@ -5077,6 +5640,120 @@ mod test {
                     get_memory_HL_getter(0x1235),
                     4);
             }
+        }
+    }
+
+    #[test]
+    fn cpu_0xCB_10_to_17(){
+        for x in 0..8 {
+            println!("testing 0xCB{:02X}", 0x10|x);
+            let mode = CB_ADDRESSING_MODES[x];
+            let cycles = 
+                if let AddressingMode::RegisterMem{..} = mode { 4 } 
+                else { 2 };
+            test_op_rl(
+                &[0xCB, 0x10|(x as u8)],
+                mode, 
+                cycles);
+        }
+    }
+
+    #[test]
+    fn cpu_0xCB_18_to_1F(){
+        for x in 0x18..0x1Fu8{
+            println!("Testing 0xCB{:02X}", x);
+            let mode = CB_ADDRESSING_MODES[(x&0b111) as usize];
+            let cycles = 
+                if let AddressingMode::RegisterMem{..} = mode { 4 } 
+                else { 2 };
+            test_op_rr(&[0xCB, x], mode, cycles);
+        }
+    }
+
+    #[test]
+    fn cpu_0xCB_20_to_27(){
+        for x in 0x20..0x27u8{
+            println!("testing 0xCB{:02X}", x);
+            let mode = CB_ADDRESSING_MODES[(x&0b111) as usize];
+            let cycles = 
+                if let AddressingMode::RegisterMem{..} = mode { 4 } 
+                else { 2 };
+            test_op_sla(&[0xCB, x], mode, cycles);
+        }
+    }
+
+    #[test]
+    fn cpu_0xCB_28_to_2F(){
+        for x in 0x28..0x2Fu8{
+            println!("testing 0xCB{:02X}", x);
+            let mode = CB_ADDRESSING_MODES[(x&0b111) as usize];
+            let cycles = 
+                if let AddressingMode::RegisterMem{..} = mode { 4 } 
+                else { 2 };
+            test_op_sra(&[0xCB, x], mode, cycles);
+        }
+    }
+
+    #[test]
+    fn cpu_0xCB_30_to_37(){
+        for x in 0x30..0x37{
+            println!("testing 0xCB{:02X}", x);
+            let mode = CB_ADDRESSING_MODES[(x&0b111) as usize];
+            let cycles = 
+                if let AddressingMode::RegisterMem{..} = mode { 4 } 
+                else { 2 };
+            test_op_swap(&[0xCB, x], mode, cycles);
+        }
+    }
+
+    #[test]
+    fn cpu_0xCB_38_to_3F(){
+        for x in 0x38..0x3F{
+            println!("testing 0xCB{:02X}", x);
+            let mode = CB_ADDRESSING_MODES[(x&0b111) as usize];
+            let cycles = 
+                if let AddressingMode::RegisterMem{..} = mode { 4 } 
+                else { 2 };
+            test_op_srl(&[0xCB, x], mode, cycles);
+        }
+    }
+
+    #[test]
+    fn cpu_0xCB_40_to_7F(){
+        for x in 0x40..0x7F{
+            println!("testing 0xCB{:02X}", x);
+            let mode = CB_ADDRESSING_MODES[(x&0b111) as usize];
+            let index = (x - 0x40)/8;
+            let cycles = 
+                if let AddressingMode::RegisterMem{..} = mode { 4 } 
+                else { 2 };
+            test_op_bit(&[0xCB, x], index, mode, cycles);
+        }
+    }
+
+    #[test]
+    fn cpu_0xCB_80_to_BF(){
+        for x in 0x80..0xBF{
+            println!("testing 0xCB{:02X}", x);
+            let mode = CB_ADDRESSING_MODES[(x&0b111) as usize];
+            let index = (x - 0x80)/8;
+            let cycles = 
+                if let AddressingMode::RegisterMem{..} = mode { 4 } 
+                else { 2 };
+            test_op_res(&[0xCB, x], index, mode, cycles);
+        }
+    }
+
+    #[test]
+    fn cpu_0xCB_C0_to_FF(){
+        for x in 0xC0..0xFF{
+            println!("testing 0xCB{:02X}", x);
+            let mode = CB_ADDRESSING_MODES[(x&0b111) as usize];
+            let index = (x - 0xC0)/8;
+            let cycles = 
+                if let AddressingMode::RegisterMem{..} = mode { 4 } 
+                else { 2 };
+            test_op_set(&[0xCB, x], index, mode, cycles);
         }
     }
 }
