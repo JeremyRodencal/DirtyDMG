@@ -39,6 +39,11 @@ impl Dmg {
         }
     }
 
+    // Attempts to load the specified rom file into the system.
+    pub fn load_rom(&mut self, data: &[u8]) -> Result<(), String>{
+        self.cart.as_ref().borrow_mut().load_rom(data)
+    }
+
     pub fn do_test(&mut self){
         println!("Writing 2 to location 0x2000");
         self.cpu.write_mem_test(&mut self.bus, 0xC000, 2);

@@ -156,6 +156,31 @@ impl Cartrige {
 
         return Ok(cart);
     }
+
+    pub fn load_rom(&mut self, rom_data: &[u8]) -> Result<(), String>
+    {
+        let info = CartInfo::from_header(rom_data)?;
+
+        let mut ram: Vec<u8> = vec![0;info.ram_size];
+        let mut rom: Vec<u8> = Vec::from(&rom_data[0..info.rom_size]);
+
+        let mapper:Box<dyn MapperRW> = 
+            match info.mapper {
+                MapperType::Rom => {
+                    Box::new(RawCart{})
+                },
+                MapperType::Mbc1 => {
+                    Box::new(mbc1::Mbc1Cart::new())
+                },
+                _ => panic!("Unsupported mapper type")
+            };
+
+        self.rom = rom;
+        self.ram = ram;
+        self.mapper = mapper;
+
+        return Ok(());
+    }
 }
 
 impl BusRW for Cartrige {
