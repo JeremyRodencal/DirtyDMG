@@ -3,6 +3,7 @@ mod cpu;
 mod bus;
 mod ram;
 mod interrupt;
+mod cartrige;
 
 use dmg::Dmg;
 
