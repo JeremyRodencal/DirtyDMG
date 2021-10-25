@@ -4,6 +4,7 @@ mod bus;
 mod ram;
 mod interrupt;
 mod cartrige;
+mod ppu;
 
 use std::env;
 use std::io::{Error, ErrorKind};
