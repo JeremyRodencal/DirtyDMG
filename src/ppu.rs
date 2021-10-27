@@ -40,6 +40,8 @@ const OAM_RAM_SIZE:usize = OAM_SPRITE_COUNT * OAM_SPRITE_SIZE;
 const OAM_START_ADDRESS:usize = 0xFE00;
 const OAM_END_ADDRESS:usize = OAM_START_ADDRESS + OAM_RAM_SIZE;
 
+const LCDC_ADDRESS:usize = 0xFF40;
+
 #[derive(Clone, Copy)]
 /// Structure to hold tile pixel data in an easily accessable format.
 struct Tile {
@@ -137,8 +139,17 @@ pub struct PPU {
     /// Raw OAM data.
     sprite_data: [u8;OAM_RAM_SIZE],
 
-    // LCD registers
+    // LCDC register
     lcdc: u8,
+    lcd_enabled: bool,
+    window_tiles_high: bool,    //True if window tiles are in the upper bank.
+    window_enabled: bool,
+    bg_window_signed_addressing: bool, // True if bg and window tiles are using the signed addressing method
+    bg_tiles_high: bool,        // True if the window tiles are in the upper bank.
+    obj_double_sprites: bool,   // True if sprites are 8x16, false if 8x8.
+    obj_enabled: bool,
+    bg_window_enable: bool,     // True if the background/window are enabled.
+
     lcds: u8,
 }
 
@@ -168,6 +179,15 @@ impl PPU {
             sprites: [default_sprite;OAM_SPRITE_COUNT],
             sprite_data: [0;OAM_RAM_SIZE],
             lcdc: 0,
+            lcd_enabled: false,
+            obj_double_sprites: false,
+            obj_enabled: false,
+            bg_tiles_high: false,
+            bg_window_enable: false,
+            bg_window_signed_addressing: false,
+            window_enabled: false,
+            window_tiles_high: false,
+
             lcds: 0,
         }
     }
@@ -200,6 +220,20 @@ impl PPU {
         // Save the raw sprite data.
         self.sprite_data[addr - OAM_START_ADDRESS] = data;
     }
+
+    fn lcdc_write(&mut self, data:u8) {
+        // Save the new LCDC value
+        self.lcdc = data;
+        
+        self.lcd_enabled = data & PPU::LCDC_ENABLE_MASK != 0;
+        self.window_tiles_high = data & PPU::LCDC_WINDOW_TILE_MAP_MASK != 0;
+        self.window_enabled = data & PPU::LCDC_WINDOW_DISPLAY_ENABLE_MASK != 0;
+        self.bg_window_signed_addressing = data & PPU::LCDC_BG_WINDOW_TILE_MAP_SELECT_MASK != 0;
+        self.bg_tiles_high = data & PPU::LCDC_BG_TILE_MAP_SELECT_MASK != 0;
+        self.obj_double_sprites = data & PPU::LCDC_OBJ_SIZE_MASK != 0;
+        self.obj_enabled = data & PPU::LCDC_OBJ_DISPLAY_ENABLE_MASK != 0;
+        self.bg_window_enable = data & PPU::LCDC_BG_WINDOW_PRIORITY_MASK != 0;
+    }
 }
 
 impl BusRW for PPU{
@@ -219,6 +253,8 @@ impl BusRW for PPU{
             OAM_START_ADDRESS..=OAM_END_ADDRESS => {
                 self.sprite_data[addr - OAM_START_ADDRESS]
             },
+
+            LCDC_ADDRESS => {self.lcdc}
             
             // Unknown read address.
             _ => {
@@ -238,6 +274,11 @@ impl BusRW for PPU{
             // OAM memory write.
             OAM_START_ADDRESS..=OAM_END_ADDRESS => {
                 self.sprite_write(value, addr);
+            }
+
+            // LCD control register
+            LCDC_ADDRESS => {
+                self.lcdc_write(value);
             }
 
             // Unknown address.
@@ -343,5 +384,21 @@ mod test {
         assert_eq!(ref_sprite, ppu.sprites[OAM_SPRITE_COUNT-1]);
         assert_eq!(ppu.sprite_data[0..OAM_SPRITE_SIZE], ref_sprite_data[..]);
         assert_eq!(ppu.sprite_data[(OAM_SPRITE_COUNT-1) * OAM_SPRITE_SIZE..], ref_sprite_data[..]);
+    }
+
+    #[test]
+    fn test_lcdc_write() {
+        let mut ppu = PPU::new();
+        ppu.bus_write8(0xFF40, 0xAA);
+
+        assert_eq!(ppu.bus_read8(LCDC_ADDRESS), 0xAA);
+        assert_eq!(ppu.lcd_enabled, true);
+        assert_eq!(ppu.window_tiles_high, false);
+        assert_eq!(ppu.window_enabled, true);
+        assert_eq!(ppu.bg_window_signed_addressing, false);
+        assert_eq!(ppu.bg_tiles_high, true);
+        assert_eq!(ppu.obj_double_sprites, false);
+        assert_eq!(ppu.obj_enabled, true);
+        assert_eq!(ppu.bg_window_enable, false)
     }
 }
