@@ -40,7 +40,16 @@ const OAM_RAM_SIZE:usize = OAM_SPRITE_COUNT * OAM_SPRITE_SIZE;
 const OAM_START_ADDRESS:usize = 0xFE00;
 const OAM_END_ADDRESS:usize = OAM_START_ADDRESS + OAM_RAM_SIZE;
 
+// LCD Registers
 const LCDC_ADDRESS:usize = 0xFF40;
+
+// Sroll registers
+const SCY_ADDRESS:usize = 0xFF42;
+const SCX_ADDRESS:usize = 0xFF43;
+const LY_ADDRESS:usize = 0xFF44;
+const LYC_ADDRES:usize = 0xFF45;
+const WY_ADDRESS:usize = 0xFF4A;
+const WX_ADDRESS:usize = 0xFF4B;
 
 #[derive(Clone, Copy)]
 /// Structure to hold tile pixel data in an easily accessable format.
@@ -150,7 +159,16 @@ pub struct PPU {
     obj_enabled: bool,
     bg_window_enable: bool,     // True if the background/window are enabled.
 
+    // LCD status register
     lcds: u8,
+
+    // scroll registers
+    scroll_y: u8,
+    scroll_x: u8,
+    line_y: u8,
+    line_compare: u8,
+    window_y: u8,
+    window_x: u8,
 }
 
 impl PPU {
@@ -187,8 +205,13 @@ impl PPU {
             bg_window_signed_addressing: false,
             window_enabled: false,
             window_tiles_high: false,
-
             lcds: 0,
+            scroll_y: 0,
+            scroll_x: 0,
+            line_y: 0,
+            line_compare: 0,
+            window_y: 0,
+            window_x: 0,
         }
     }
 
@@ -246,7 +269,7 @@ impl BusRW for PPU{
 
             // Tile map read
             TILEMAP_START_ADDRESS..=TILEMAP_END_ADDRESS => {
-                self.tile_data[addr-TILEMAP_START_ADDRESS]
+                self.tilemaps[addr-TILEMAP_START_ADDRESS]
             },
 
             // Object attribute memory read
@@ -254,8 +277,15 @@ impl BusRW for PPU{
                 self.sprite_data[addr - OAM_START_ADDRESS]
             },
 
+            // Individual registers
             LCDC_ADDRESS => {self.lcdc}
-            
+            SCY_ADDRESS => {self.scroll_y}
+            SCX_ADDRESS => {self.scroll_x}
+            LY_ADDRESS => {self.line_y}
+            LYC_ADDRES => {self.line_compare}
+            WY_ADDRESS => {self.window_y}
+            WX_ADDRESS => {self.window_x}
+
             // Unknown read address.
             _ => {
                 panic!("Unknown PPU read at address: 0x{:4X}", addr)
@@ -280,6 +310,14 @@ impl BusRW for PPU{
             LCDC_ADDRESS => {
                 self.lcdc_write(value);
             }
+
+            // Scroll and compare registers.
+            SCY_ADDRESS => {self.scroll_y = value;}
+            SCX_ADDRESS => {self.scroll_x = value;}
+            LY_ADDRESS => {/*Dead Write*/}
+            LYC_ADDRES => {self.line_compare = value;}
+            WY_ADDRESS => {self.window_y = value;}
+            WX_ADDRESS => {self.window_x = value;}
 
             // Unknown address.
             _ => {
@@ -401,4 +439,73 @@ mod test {
         assert_eq!(ppu.obj_enabled, true);
         assert_eq!(ppu.bg_window_enable, false)
     }
+
+    #[test]
+    fn test_scy_rw() {
+        let mut ppu = PPU::new();
+        let value = 39;
+        let address = 0xFF42;
+        ppu.bus_write8(address, value);
+        assert_eq!(ppu.scroll_y, value);
+        assert_eq!(ppu.bus_read8(address), value);
+    }
+
+    #[test]
+    fn test_scx_rw() {
+        let mut ppu = PPU::new();
+        let value = 84;
+        let address = 0xFF43;
+        ppu.bus_write8(address, value);
+        assert_eq!(ppu.scroll_x, value);
+        assert_eq!(ppu.bus_read8(address), value);
+    }
+
+    #[test]
+    fn test_ly_write_dead() {
+        // The line y register is read only, and should not change due to a write.
+        let mut ppu = PPU::new();
+        let value = 84;
+        let address = 0xFF44;
+        ppu.bus_write8(address, value);
+        assert_eq!(ppu.line_y, 0);
+        assert_eq!(ppu.bus_read8(address), 0);
+    }
+
+    #[test]
+    #[ignore]
+    fn test_ly_read(){
+        // TODO - this must return the current line once rendering functionality is in place.
+        assert_eq!(1,2);
+    }
+
+    #[test]
+    fn test_lyc_rw() {
+        let mut ppu = PPU::new();
+        let value = 255;
+        let address = 0xFF45;
+        ppu.bus_write8(address, value);
+        assert_eq!(ppu.line_compare, value);
+        assert_eq!(ppu.bus_read8(address), value);
+    }
+
+    #[test]
+    fn test_wy_rw() {
+        let mut ppu = PPU::new();
+        let value = 43;
+        let address = 0xFF4A;
+        ppu.bus_write8(address, value);
+        assert_eq!(ppu.window_y, value);
+        assert_eq!(ppu.bus_read8(address), value);
+    }
+
+    #[test]
+    fn test_wx_rw() {
+        let mut ppu = PPU::new();
+        let value = 43;
+        let address = 0xFF4B;
+        ppu.bus_write8(address, value);
+        assert_eq!(ppu.window_x, value);
+        assert_eq!(ppu.bus_read8(address), value);
+    }
+
 }
