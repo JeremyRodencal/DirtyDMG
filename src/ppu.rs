@@ -83,20 +83,25 @@ impl Tile {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Debug)]
 struct OamSprite{
-    ypos: u8,
-    xpos: u8,
-    tile: u8,
+    pub ypos: u8,
+    pub xpos: u8,
+    pub tile: u8,
 
     //These fields are all packed into a single byte.
-    behind_background: bool,
-    xflip: bool,
-    yflip: bool,
-    palette: bool,
+    pub behind_background: bool,
+    pub xflip: bool,
+    pub yflip: bool,
+    pub palette: bool,
 }
 
 impl OamSprite {
+    const PALLET_ATTRIB_MASK:u8 = 0b0001_0000;
+    const XFLIP_ATTRIB_MASK:u8 =  0b0010_0000;
+    const YFLIP_ATTRIB_MASK:u8 =  0b0100_0000;
+    const BG_PRIORITY_ATTRIB_MASK:u8 = 0b1000_0000;
+
     fn new() -> OamSprite{
         OamSprite{
             ypos: 0,
@@ -107,6 +112,14 @@ impl OamSprite {
             yflip: false,
             palette: false
         }
+    }
+
+    fn set_attrib_byte(&mut self, data:u8)
+    {
+        self.behind_background = data & OamSprite::BG_PRIORITY_ATTRIB_MASK != 0;
+        self.xflip = data & OamSprite::XFLIP_ATTRIB_MASK != 0;
+        self.yflip = data & OamSprite::YFLIP_ATTRIB_MASK != 0;
+        self.palette = data & OamSprite::PALLET_ATTRIB_MASK != 0;
     }
 }
 
@@ -170,6 +183,23 @@ impl PPU {
         // Update the tile data.
         self.tiles[index].update_row(data, y, msb);
     }
+
+    fn sprite_write(&mut self, data:u8, addr:usize) {
+        let index = (addr - OAM_START_ADDRESS) / OAM_SPRITE_SIZE;
+        let field = addr & 0b11;
+
+        // Update the sprite attributes
+        match field {
+            0 => {self.sprites[index].ypos = data;},
+            1 => {self.sprites[index].xpos = data;},
+            2 => {self.sprites[index].tile = data;},
+            3 => {self.sprites[index].set_attrib_byte(data);},
+            _ => {panic!("THIS IS A BUG! invalid sprite field write");}
+        }
+
+        // Save the raw sprite data.
+        self.sprite_data[addr - OAM_START_ADDRESS] = data;
+    }
 }
 
 impl BusRW for PPU{
@@ -203,6 +233,11 @@ impl BusRW for PPU{
             // Tile data write
             TILESET_START_ADDRESS..=TILESET_END_ADDRESS => {
                 self.tile_write(value, addr);
+            }
+
+            // OAM memory write.
+            OAM_START_ADDRESS..=OAM_END_ADDRESS => {
+                self.sprite_write(value, addr);
             }
 
             // Unknown address.
@@ -280,5 +315,33 @@ mod test {
             assert_eq!(x, ppu.bus_read8(address));
             address += 1;
         }
+    }
+
+    #[test]
+    fn test_sprite_write() {
+        let ref_sprite = OamSprite{
+            ypos:1,
+            xpos:2,
+            tile:127,
+            behind_background: true,
+            yflip: false,
+            xflip: true,
+            palette: false
+        };
+        let ref_sprite_data = [1 as u8, 2, 127, 0xA0];
+
+        // construct a ppu to test against
+        let mut ppu = PPU::new();
+
+        // Write the sprite data to the first and last sprite
+        for (i, value) in ref_sprite_data.iter().enumerate() {
+            ppu.bus_write8(OAM_START_ADDRESS + i, *value);
+            ppu.bus_write8(OAM_END_ADDRESS - OAM_SPRITE_SIZE + i, *value);
+        }
+
+        assert_eq!(ref_sprite, ppu.sprites[0]);
+        assert_eq!(ref_sprite, ppu.sprites[OAM_SPRITE_COUNT-1]);
+        assert_eq!(ppu.sprite_data[0..OAM_SPRITE_SIZE], ref_sprite_data[..]);
+        assert_eq!(ppu.sprite_data[(OAM_SPRITE_COUNT-1) * OAM_SPRITE_SIZE..], ref_sprite_data[..]);
     }
 }
