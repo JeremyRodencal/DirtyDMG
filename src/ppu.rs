@@ -225,6 +225,10 @@ pub struct PPU {
     bg_palette: Palette,
     obj_palette1: Palette,
     obj_palette2: Palette,
+
+    // OAM DMA
+    oam_dma_ticks: u8,
+    oam_dma_src: u16,
 }
 
 impl PPU {
@@ -242,6 +246,8 @@ impl PPU {
     const LCDS_MODE2_IS_MASK: u8 =    1<<5;
     const LCDS_MODE1_IS_MASK: u8 =    1<<4;
     const LCDS_MODE0_IS_MASK: u8 =    1<<3;
+
+    const OAM_DMA_TRANSFER_TICKS: u8 = 160; // In cpu ticks or "T" cycles.
 
     ///#Executes the specified number of clock ticks.
     pub fn execute_ticks(&mut self, ticks:u16){
@@ -282,6 +288,8 @@ impl PPU {
             bg_palette: Palette::new(),
             obj_palette1: Palette::new(),
             obj_palette2: Palette::new(),
+            oam_dma_src: 0,
+            oam_dma_ticks: 0,
         }
     }
 
@@ -352,6 +360,12 @@ impl PPU {
         value |= self.mode as u8;
         value
     }
+
+    fn dma_start(&mut self, target: u8) {
+        self.oam_dma_src = (target as u16) << 8;
+        self.oam_dma_ticks = PPU::OAM_DMA_TRANSFER_TICKS;
+        // TODO actually execute the transfer
+    }
 }
 
 impl BusRW for PPU{
@@ -384,6 +398,7 @@ impl BusRW for PPU{
             BG_PALETTE_ADDRESS => {self.bg_palette.raw}
             OBJ_PALETTE1_ADDRESS => {self.obj_palette1.raw}
             OBJ_PALETTE2_ADDRESS => {self.obj_palette2.raw}
+            OAM_DMA_REGISTER_ADDRESS => {(self.oam_dma_src>>8) as u8}
 
             // Unknown read address.
             _ => {
@@ -425,6 +440,7 @@ impl BusRW for PPU{
             BG_PALETTE_ADDRESS => {self.bg_palette.update(value);}
             OBJ_PALETTE1_ADDRESS => {self.obj_palette1.update(value);}
             OBJ_PALETTE2_ADDRESS => {self.obj_palette2.update(value);}
+            OAM_DMA_REGISTER_ADDRESS => {self.dma_start(value);}
 
             // Unknown address.
             _ => {
@@ -682,5 +698,19 @@ mod test {
         assert_eq!(ppu.bus_read8(address), raw_value);
         assert_eq!(ppu.obj_palette2.raw, raw_value);
         assert_eq!(ppu.obj_palette2.table, expected_table);
+    }
+
+    #[test]
+    fn test_dma_transfer_start_ticksAndAddr() {
+        let mut ppu = PPU::new();
+        let address = 0xFF46;
+        let value = 45;
+        let transfer_address = 45 * 0x100;
+
+        ppu.bus_write8(address, 45);
+
+        assert_eq!(ppu.bus_read8(address), value);
+        assert_eq!(ppu.oam_dma_src, transfer_address);
+        assert_eq!(ppu.oam_dma_ticks, 160);
     }
 }
