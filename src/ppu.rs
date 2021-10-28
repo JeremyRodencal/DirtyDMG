@@ -52,9 +52,13 @@ const LYC_ADDRES:usize = 0xFF45;
 const WY_ADDRESS:usize = 0xFF4A;
 const WX_ADDRESS:usize = 0xFF4B;
 
+const OAM_DMA_REGISTER_ADDRESS:usize = 0xFF46;
+
 // Palette registers
-const BG_PALLET_ADDRESS:usize = 0xFF47;
-const OBJ_PALLET_ADDRESS:usize = 0xFF48;
+const BG_PALETTE_ADDRESS:usize = 0xFF47;
+const OBJ_PALETTE1_ADDRESS:usize = 0xFF48;
+const OBJ_PALETTE2_ADDRESS:usize = 0xFF49;
+
 
 #[derive(Clone, Copy)]
 /// Structure to hold tile pixel data in an easily accessable format.
@@ -219,7 +223,8 @@ pub struct PPU {
 
     // Pallet 
     bg_palette: Palette,
-    obj_palette: Palette,
+    obj_palette1: Palette,
+    obj_palette2: Palette,
 }
 
 impl PPU {
@@ -275,7 +280,8 @@ impl PPU {
             line_compare: false,
             mode: Mode::HBLANK,
             bg_palette: Palette::new(),
-            obj_palette: Palette::new(),
+            obj_palette1: Palette::new(),
+            obj_palette2: Palette::new(),
         }
     }
 
@@ -375,8 +381,9 @@ impl BusRW for PPU{
             LYC_ADDRES => {self.line_compare_value}
             WY_ADDRESS => {self.window_y}
             WX_ADDRESS => {self.window_x}
-            BG_PALLET_ADDRESS => {self.bg_palette.raw}
-            OBJ_PALLET_ADDRESS => {self.obj_palette.raw}
+            BG_PALETTE_ADDRESS => {self.bg_palette.raw}
+            OBJ_PALETTE1_ADDRESS => {self.obj_palette1.raw}
+            OBJ_PALETTE2_ADDRESS => {self.obj_palette2.raw}
 
             // Unknown read address.
             _ => {
@@ -415,8 +422,9 @@ impl BusRW for PPU{
             LYC_ADDRES => {self.line_compare_value = value;}
             WY_ADDRESS => {self.window_y = value;}
             WX_ADDRESS => {self.window_x = value;}
-            BG_PALLET_ADDRESS => {self.bg_palette.update(value);}
-            OBJ_PALLET_ADDRESS => {self.obj_palette.update(value);}
+            BG_PALETTE_ADDRESS => {self.bg_palette.update(value);}
+            OBJ_PALETTE1_ADDRESS => {self.obj_palette1.update(value);}
+            OBJ_PALETTE2_ADDRESS => {self.obj_palette2.update(value);}
 
             // Unknown address.
             _ => {
@@ -645,7 +653,7 @@ mod test {
     }
 
     #[test]
-    fn test_obj_palette_rw(){
+    fn test_obj_palette1_rw(){
         let address = 0xFF48;
         let mut ppu = PPU::new();
         let raw_value = 0b_11_10_01_00;
@@ -656,7 +664,23 @@ mod test {
 
         // Postconditions
         assert_eq!(ppu.bus_read8(address), raw_value);
-        assert_eq!(ppu.obj_palette.raw, raw_value);
-        assert_eq!(ppu.obj_palette.table, expected_table);
+        assert_eq!(ppu.obj_palette1.raw, raw_value);
+        assert_eq!(ppu.obj_palette1.table, expected_table);
+    }
+
+    #[test]
+    fn test_obj_palette2_rw(){
+        let address = 0xFF49;
+        let mut ppu = PPU::new();
+        let raw_value = 0b_11_10_01_00;
+        let expected_table = [0,1,2,3];
+
+        // Code under test
+        ppu.bus_write8(address, raw_value);
+
+        // Postconditions
+        assert_eq!(ppu.bus_read8(address), raw_value);
+        assert_eq!(ppu.obj_palette2.raw, raw_value);
+        assert_eq!(ppu.obj_palette2.table, expected_table);
     }
 }
