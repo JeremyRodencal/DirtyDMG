@@ -42,6 +42,7 @@ const OAM_END_ADDRESS:usize = OAM_START_ADDRESS + OAM_RAM_SIZE;
 
 // LCD Registers
 const LCDC_ADDRESS:usize = 0xFF40;
+const LCDS_ADDRESS:usize = 0xFF41;
 
 // Sroll registers
 const SCY_ADDRESS:usize = 0xFF42;
@@ -134,6 +135,14 @@ impl OamSprite {
     }
 }
 
+#[derive(Clone, Copy)]
+enum Mode{
+    HBLANK = 0,
+    VBLANK = 1,
+    SPRITE_SEARCH = 2,
+    LCD_TRANSFER = 3
+}
+
 pub struct PPU {
     /// Raw tile data stored in the origial gameboy format.
     tile_data: [u8;TILESET_RAM],
@@ -161,12 +170,19 @@ pub struct PPU {
 
     // LCD status register
     lcds: u8,
+    // interrupt sources
+    line_compare_is: bool,
+    mode2_is: bool,
+    mode1_is: bool,
+    mode0_is: bool, 
+    line_compare: bool,
+    mode: Mode,
 
     // scroll registers
     scroll_y: u8,
     scroll_x: u8,
     line_y: u8,
-    line_compare: u8,
+    line_compare_value: u8,
     window_y: u8,
     window_x: u8,
 }
@@ -181,6 +197,11 @@ impl PPU {
     const LCDC_OBJ_SIZE_MASK: u8                    = 0b0000_0100;
     const LCDC_OBJ_DISPLAY_ENABLE_MASK: u8          = 0b0000_0010;
     const LCDC_BG_WINDOW_PRIORITY_MASK: u8          = 0b0000_0001;
+
+    const LCDS_LINE_CMP_IS_MASK: u8 = 1<<6;
+    const LCDS_MODE2_IS_MASK: u8 =    1<<5;
+    const LCDS_MODE1_IS_MASK: u8 =    1<<4;
+    const LCDS_MODE0_IS_MASK: u8 =    1<<3;
 
     ///#Executes the specified number of clock ticks.
     pub fn execute_ticks(&mut self, ticks:u16){
@@ -209,9 +230,15 @@ impl PPU {
             scroll_y: 0,
             scroll_x: 0,
             line_y: 0,
-            line_compare: 0,
+            line_compare_value: 0,
             window_y: 0,
             window_x: 0,
+            line_compare_is: false,
+            mode2_is: false,
+            mode1_is: false,
+            mode0_is: false, 
+            line_compare: false,
+            mode: Mode::HBLANK,
         }
     }
 
@@ -257,6 +284,31 @@ impl PPU {
         self.obj_enabled = data & PPU::LCDC_OBJ_DISPLAY_ENABLE_MASK != 0;
         self.bg_window_enable = data & PPU::LCDC_BG_WINDOW_PRIORITY_MASK != 0;
     }
+
+    fn lcds_write(&mut self, data:u8) {
+        // Only these bits are writable
+        self.line_compare_is = data & PPU::LCDS_LINE_CMP_IS_MASK != 0;
+        self.mode2_is = data & PPU::LCDS_MODE2_IS_MASK != 0;
+        self.mode1_is = data & PPU::LCDS_MODE1_IS_MASK != 0;
+        self.mode0_is = data & PPU::LCDS_MODE0_IS_MASK != 0;
+    }
+
+    fn lcds_read(&mut self) -> u8 {
+        // Reassemble the LCDS value one bit at a time, starting with the msb.
+        let mut value = 0;
+        value |= self.line_compare_is as u8;
+        value <<= 1;
+        value |= self.mode2_is as u8;
+        value <<= 1;
+        value |= self.mode1_is as u8;
+        value <<= 1;
+        value |= self.mode0_is as u8;
+        value <<= 1;
+        value |= self.line_compare as u8;
+        value <<= 2;
+        value |= self.mode as u8;
+        value
+    }
 }
 
 impl BusRW for PPU{
@@ -279,10 +331,11 @@ impl BusRW for PPU{
 
             // Individual registers
             LCDC_ADDRESS => {self.lcdc}
+            LCDS_ADDRESS => {self.lcds_read()}
             SCY_ADDRESS => {self.scroll_y}
             SCX_ADDRESS => {self.scroll_x}
             LY_ADDRESS => {self.line_y}
-            LYC_ADDRES => {self.line_compare}
+            LYC_ADDRES => {self.line_compare_value}
             WY_ADDRESS => {self.window_y}
             WX_ADDRESS => {self.window_x}
 
@@ -311,11 +364,16 @@ impl BusRW for PPU{
                 self.lcdc_write(value);
             }
 
+            // LCD status register
+            LCDS_ADDRESS => {
+                self.lcds_write(value);
+            }
+
             // Scroll and compare registers.
             SCY_ADDRESS => {self.scroll_y = value;}
             SCX_ADDRESS => {self.scroll_x = value;}
             LY_ADDRESS => {/*Dead Write*/}
-            LYC_ADDRES => {self.line_compare = value;}
+            LYC_ADDRES => {self.line_compare_value = value;}
             WY_ADDRESS => {self.window_y = value;}
             WX_ADDRESS => {self.window_x = value;}
 
@@ -484,7 +542,7 @@ mod test {
         let value = 255;
         let address = 0xFF45;
         ppu.bus_write8(address, value);
-        assert_eq!(ppu.line_compare, value);
+        assert_eq!(ppu.line_compare_value, value);
         assert_eq!(ppu.bus_read8(address), value);
     }
 
@@ -506,6 +564,25 @@ mod test {
         ppu.bus_write8(address, value);
         assert_eq!(ppu.window_x, value);
         assert_eq!(ppu.bus_read8(address), value);
+    }
+
+    #[test]
+    fn test_lcds_write() {
+        let mut ppu = PPU::new();
+        let value = 0xFF;
+        let address = 0xFF41;
+        ppu.bus_write8(address, value);
+        assert_eq!(ppu.bus_read8(address), 0x78);
+        assert_eq!(ppu.line_compare_is, true);
+        assert_eq!(ppu.mode2_is, true);
+        assert_eq!(ppu.mode1_is, true);
+        assert_eq!(ppu.mode0_is, true);
+
+        ppu.bus_write8(address, 0b0010_1000);
+        assert_eq!(ppu.mode0_is, true);
+        assert_eq!(ppu.mode1_is, false);
+        assert_eq!(ppu.mode2_is, true);
+        assert_eq!(ppu.line_compare_is, false);
     }
 
 }
