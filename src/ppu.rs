@@ -52,6 +52,10 @@ const LYC_ADDRES:usize = 0xFF45;
 const WY_ADDRESS:usize = 0xFF4A;
 const WX_ADDRESS:usize = 0xFF4B;
 
+// Palette registers
+const BG_PALLET_ADDRESS:usize = 0xFF47;
+const OBJ_PALLET_ADDRESS:usize = 0xFF48;
+
 #[derive(Clone, Copy)]
 /// Structure to hold tile pixel data in an easily accessable format.
 struct Tile {
@@ -91,6 +95,33 @@ impl Tile {
     fn new() -> Tile{
         Tile{
             pixel: [[0;TILE_DIMENSION];TILE_DIMENSION]
+        }
+    }
+}
+
+struct Palette{
+    pub table: [u8;4],
+    pub raw: u8,
+}
+
+impl Palette {
+    /// Constructs a new blank palette.
+    fn new() -> Palette{
+        Palette{
+            table: [0;4],
+            raw: 0
+        }
+    }
+
+    /// Updates the palette with new encoded data.
+    /// 
+    /// This will update both the raw and table values.
+    fn update(&mut self, mut raw:u8){
+        // Update the raw value
+        self.raw = raw;
+        for i in (0..4){
+            self.table[i] = raw & 0b11;
+            raw >>= 2;
         }
     }
 }
@@ -185,6 +216,10 @@ pub struct PPU {
     line_compare_value: u8,
     window_y: u8,
     window_x: u8,
+
+    // Pallet 
+    bg_palette: Palette,
+    obj_palette: Palette,
 }
 
 impl PPU {
@@ -239,6 +274,8 @@ impl PPU {
             mode0_is: false, 
             line_compare: false,
             mode: Mode::HBLANK,
+            bg_palette: Palette::new(),
+            obj_palette: Palette::new(),
         }
     }
 
@@ -338,6 +375,8 @@ impl BusRW for PPU{
             LYC_ADDRES => {self.line_compare_value}
             WY_ADDRESS => {self.window_y}
             WX_ADDRESS => {self.window_x}
+            BG_PALLET_ADDRESS => {self.bg_palette.raw}
+            OBJ_PALLET_ADDRESS => {self.obj_palette.raw}
 
             // Unknown read address.
             _ => {
@@ -376,6 +415,8 @@ impl BusRW for PPU{
             LYC_ADDRES => {self.line_compare_value = value;}
             WY_ADDRESS => {self.window_y = value;}
             WX_ADDRESS => {self.window_x = value;}
+            BG_PALLET_ADDRESS => {self.bg_palette.update(value);}
+            OBJ_PALLET_ADDRESS => {self.obj_palette.update(value);}
 
             // Unknown address.
             _ => {
@@ -585,4 +626,37 @@ mod test {
         assert_eq!(ppu.line_compare_is, false);
     }
 
+    fn test_palette_rw(ppu:&mut PPU, palette:&Palette, address:usize){
+    }
+
+    #[test]
+    fn test_bg_palette_rw(){
+        let address = 0xFF47;
+        let mut ppu = PPU::new();
+        let raw_value = 0b_11_10_01_00;
+        let expected_table = [0,1,2,3];
+
+        // Code under test
+        ppu.bus_write8(address, raw_value);
+
+        assert_eq!(ppu.bus_read8(address), raw_value);
+        assert_eq!(ppu.bg_palette.raw, raw_value);
+        assert_eq!(ppu.bg_palette.table, expected_table);
+    }
+
+    #[test]
+    fn test_obj_palette_rw(){
+        let address = 0xFF48;
+        let mut ppu = PPU::new();
+        let raw_value = 0b_11_10_01_00;
+        let expected_table = [0,1,2,3];
+
+        // Code under test
+        ppu.bus_write8(address, raw_value);
+
+        // Postconditions
+        assert_eq!(ppu.bus_read8(address), raw_value);
+        assert_eq!(ppu.obj_palette.raw, raw_value);
+        assert_eq!(ppu.obj_palette.table, expected_table);
+    }
 }
