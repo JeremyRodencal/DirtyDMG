@@ -450,13 +450,15 @@ impl BusRW for PPU{
     }
 
     fn bus_read16(&mut self, addr: usize) -> u16 {
-        // TODO
-        panic!("not implemented");
+        let mut value = self.bus_read8(addr + 1) as u16;
+        value <<= 8;
+        value |= self.bus_read8(addr) as u16;
+        return value;
     }
 
     fn bus_write16(&mut self, addr: usize, value: u16){
-        // TODO
-        panic!("not implemented");
+        self.bus_write8(addr, value as u8 & 0xFF);
+        self.bus_write8(addr + 1, (value >> 8) as u8);
     }
 }
 
