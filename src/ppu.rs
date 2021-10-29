@@ -250,8 +250,22 @@ impl PPU {
     const OAM_DMA_TRANSFER_TICKS: u8 = 160; // In cpu ticks or "T" cycles.
 
     ///#Executes the specified number of clock ticks.
-    pub fn execute_ticks(&mut self, ticks:u16){
+    pub fn execute_ticks(&mut self, ticks:u16, bus:&mut impl BusRW){
 
+        // If there is a DMA transfer in progress
+        if self.oam_dma_ticks > 0 {
+            // If the transfer was just initiated.
+            if self.oam_dma_ticks == PPU::OAM_DMA_TRANSFER_TICKS{
+                self.dma_transfer(bus);
+            }
+
+            // Update the number of remaining DMA ticks.
+            if self.oam_dma_ticks as u16 > ticks{
+                self.oam_dma_ticks -= ticks as u8;
+            } else {
+                self.oam_dma_ticks = 0;
+            }
+        }
     }
 
     pub fn new() -> PPU {
@@ -291,6 +305,11 @@ impl PPU {
             oam_dma_src: 0,
             oam_dma_ticks: 0,
         }
+    }
+
+    /// Checks if a DMA transfer is currently executing.
+    fn dma_active(&self) -> bool{
+        return self.oam_dma_ticks != 0;
     }
 
     fn tile_write(&mut self, data:u8, addr:usize)
@@ -361,10 +380,27 @@ impl PPU {
         value
     }
 
+    /// # Stage a DMA transfer
+    /// 
+    /// The actual transfer will not be executed until the next set of PPU
+    /// updates.
     fn dma_start(&mut self, target: u8) {
         self.oam_dma_src = (target as u16) << 8;
         self.oam_dma_ticks = PPU::OAM_DMA_TRANSFER_TICKS;
-        // TODO actually execute the transfer
+    }
+
+    /// #Executes the DMA memory transfer.
+    /// 
+    /// This is not done tick by tick, but in one large operation. It should 
+    /// not have any negative effects, since the source area and target area
+    /// will be blocked during the transfer.
+    fn dma_transfer(&mut self, bus:&mut impl BusRW){
+        let address = self.oam_dma_src as usize;
+        for x in 0..OAM_RAM_SIZE{
+            self.sprite_write(
+                bus.bus_read8(address + x), 
+                OAM_START_ADDRESS + x);
+        }
     }
 }
 
@@ -465,6 +501,7 @@ impl BusRW for PPU{
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::ram::Ram;
 
     #[test]
     fn test_tile_write()
@@ -714,5 +751,51 @@ mod test {
         assert_eq!(ppu.bus_read8(address), value);
         assert_eq!(ppu.oam_dma_src, transfer_address);
         assert_eq!(ppu.oam_dma_ticks, 160);
+    }
+
+    #[test]
+    fn test_dma_transfer_ticks_down() {
+        // Given a PPU with a staged DMA transfer
+        let mut ppu = PPU::new();
+        let mut ram = Ram::new(160, 0);
+        ppu.bus_write8(OAM_DMA_REGISTER_ADDRESS, 0);
+
+        // When 7 ticks are executed
+        ppu.execute_ticks(7, &mut ram);
+
+        // Then the ticks count down by the number of executed ticks
+        assert_eq!(ppu.oam_dma_ticks, 153);
+
+        // When more ticks are executed than remain on the dma transfer
+        ppu.execute_ticks(154, &mut ram);
+
+        // Then the ticks will not underflow.
+        assert_eq!(ppu.oam_dma_ticks, 0);
+    }
+
+    #[test]
+    fn test_dma_transfer_moves_data()
+    {
+        // Given a PPU with a staged DMA transfer, and some initialized ram
+        let mut ppu = PPU::new();
+        let mut ram = Ram::new(1024, 0);
+        for x in 256..(256+OAM_RAM_SIZE){
+            ram.bus_write8(x, x as u8);
+        }
+        ppu.bus_write8(OAM_DMA_REGISTER_ADDRESS, 1);
+
+        // When the ppu executes ticks
+        ppu.execute_ticks(1, &mut ram);
+
+        // Then the OAM memory must contain the new data from the transfer source.
+        for x in 0..OAM_RAM_SIZE {
+            assert_eq!(ppu.sprite_data[x], x as u8);
+        }
+    }
+
+    #[test]
+    #[ignore]
+    fn test_dma_memory_lock() {
+        panic!("test_dma_memory_lock is not implemented");
     }
 }
