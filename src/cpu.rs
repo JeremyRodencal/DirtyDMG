@@ -1,4 +1,5 @@
 use byteorder::{ByteOrder, LittleEndian};
+use crate::interrupt::InterruptStatus;
 use crate::bus::{BusRW};
 
 #[allow(dead_code)]
@@ -128,6 +129,13 @@ pub struct Cpu {
 
 #[allow(dead_code)]
 impl Cpu {
+    const ISR_OVERHEAD_CYCLES:u8 = 5;
+    const VBLANK_ISR_ADDR:u16 = 0x40;
+    const LCD_ISR_ADDR:u16    = 0x48;
+    const TIMER_ISR_ADDR:u16  = 0x50;
+    const SERIAL_ISR_ADDR:u16 = 0x58;
+    const JOYPAD_ISR_ADDR:u16 = 0x60;
+
     pub fn new()->Cpu {
         Cpu{
             reg:Regs::new(),
@@ -165,6 +173,80 @@ impl Cpu {
             JumpCondition::C =>  self.reg.f & Regs::CARRY_FLAG != 0,
             JumpCondition::Nc => self.reg.f & Regs::CARRY_FLAG == 0,
         }
+    }
+
+    fn start_isr(&mut self, bus: &mut impl BusRW, is: &mut InterruptStatus, addr: u16)
+    {
+        // Write the current PC to the stack
+        self.reg.sp = self.reg.sp.wrapping_sub(2);
+        bus.bus_write16(self.reg.sp as usize, self.reg.pc);
+
+        // Update the program counter
+        self.reg.pc = addr;
+
+        // Disable interrupts
+        self.isr_en = false;
+    }
+
+    /// Checks for and handles pending interrupts
+    /// 
+    /// Returns the number of busy cycles if an ISR is started, or zero if no interrupt started.
+    fn update_interrupts(&mut self, bus: &mut impl BusRW, is: &mut InterruptStatus) -> bool
+    {
+        let mut started:bool = false;
+
+        // Check for interrupts if enabled.
+        if self.isr_en 
+        {
+            started = true;
+            if is.is_vblank_active()
+            {
+                self.start_isr(bus, is, Cpu::VBLANK_ISR_ADDR);
+                is.clear_vblank();
+            }
+            else if is.is_lcdstat_active()
+            {
+                self.start_isr(bus, is, Cpu::LCD_ISR_ADDR);
+                is.clear_lcdstat();
+            }
+            else if is.is_timer_active()
+            {
+                self.start_isr(bus, is, Cpu::TIMER_ISR_ADDR);
+                is.clear_timer();
+            }
+            else if is.is_serial_active()
+            {
+                self.start_isr(bus, is, Cpu::SERIAL_ISR_ADDR);
+                is.clear_serial();
+            }
+            else if is.is_joypad_active()
+            {
+                self.start_isr(bus, is, Cpu::JOYPAD_ISR_ADDR);
+                is.clear_joypad();
+            }
+            else
+            {
+                started = false;
+            }
+        }
+
+        return started;
+    }
+
+    pub fn update(&mut self, bus: &mut impl BusRW, is: &mut InterruptStatus) -> u8
+    {
+        // Handle any pending interrupts
+        if self.update_interrupts(bus, is)
+        {
+            self.busy_cycles = Cpu::ISR_OVERHEAD_CYCLES as u32;
+        }
+        // Execute a normal instruction.
+        else
+        {
+            self.execute_instruction(bus);
+        }
+
+        return self.busy_cycles as u8;
     }
 
     fn execute_instruction(&mut self, bus:&mut impl BusRW) -> u8
@@ -5755,5 +5837,101 @@ mod test {
                 else { 2 };
             test_op_set(&[0xCB, x], index, mode, cycles);
         }
+    }
+
+    fn test_isr(is: &mut InterruptStatus, addr: u16)
+    {
+        // Setup components
+        let mut cpu = Cpu::new();
+        cpu.isr_en = true;
+        let mut ram = get_ram();
+
+        let cycles = cpu.update(&mut ram, is);
+
+        assert_eq!(cpu.isr_en, false);
+        assert_eq!(cpu.reg.pc, addr);
+        assert_eq!(cycles, 5);
+    }
+
+    #[test]
+    fn cpu_isr_vblank(){
+        // Request a vblank interrupt
+        let mut is = InterruptStatus::new();
+        is.isrmask = 0xFF;
+        is.request_vblank();
+
+        test_isr(&mut is, 0x40);
+
+        assert_eq!(is.is_vblank_active(), false);
+    }
+
+    #[test]
+    fn cpu_isr_lcd() {
+        // Request a vblank interrupt
+        let mut is = InterruptStatus::new();
+        is.isrmask = 0xFF;
+        is.request_lcdstat();
+
+        test_isr(&mut is, 0x48);
+
+        assert_eq!(is.is_lcdstat_active(), false);
+    }
+
+    #[test]
+    fn cpu_isr_timer() {
+        // Request a vblank interrupt
+        let mut is = InterruptStatus::new();
+        is.isrmask = 0xFF;
+        is.request_timer();
+
+        test_isr(&mut is, 0x50);
+
+        assert_eq!(is.is_timer_active(), false);
+    }
+
+    #[test]
+    fn cpu_isr_serial() {
+        // Request a vblank interrupt
+        let mut is = InterruptStatus::new();
+        is.isrmask = 0xFF;
+        is.request_serial();
+
+        test_isr(&mut is, 0x58);
+
+        assert_eq!(is.is_serial_active(), false);
+    }
+
+    #[test]
+    fn cpu_isr_joypad() {
+        // Request a vblank interrupt
+        let mut is = InterruptStatus::new();
+        is.isrmask = 0xFF;
+        is.request_joypad();
+
+        test_isr(&mut is, 0x60);
+
+        assert_eq!(is.is_joypad_active(), false);
+    }
+
+    #[test]
+    fn cpu_update_noIsrIfDisabled()
+    {
+        // Disable interrupts on the cpu
+        let mut cpu = Cpu::new();
+        cpu.isr_en = false;
+
+        // Enable and set all the interrupts.
+        let mut is = InterruptStatus::new();
+        is.isrmask = 0xFF;
+        is.isrreq = 0xFF;
+
+        // Ram is blank
+        let mut ram = get_ram();
+
+        let cycles = cpu.update(&mut ram, &mut is);
+
+        // Cpu should have executed a NOP since ram is zeroed.
+        assert_eq!(cycles, 1);
+        assert_eq!(cpu.reg.pc, 1);
     }
 }

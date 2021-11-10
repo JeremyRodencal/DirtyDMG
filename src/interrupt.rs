@@ -2,10 +2,10 @@ use crate::bus::BusRW;
 
 pub struct InterruptStatus {
     /// Interrupt status request byte. Use the assorted XXX_MASK constants to check for requests.
-    isrreq: u8,
+    pub isrreq: u8,
 
     /// Interrupt enable/disable mask.
-    isrmask: u8,
+    pub isrmask: u8,
 }
 
 impl InterruptStatus {
