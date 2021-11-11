@@ -22,6 +22,7 @@ impl Dmg {
     pub fn new() -> Dmg {
         // components that will live on the bus
         let ram = Rc::new(RefCell::new(Ram::new(0x2000, 0xC000)));
+        let zero_page = Rc::new(RefCell::new(Ram::new(127, 0xFF80)));
         let isr = Rc::new(RefCell::new(InterruptStatus::new()));
         let cart = Rc::new(RefCell::new(Cartrige::new()));
         let ppu = Rc::new(RefCell::new(PPU::new()));
@@ -35,6 +36,7 @@ impl Dmg {
         bus.add_item(BusItem::new(0x0000, 0x7FFF, cart.clone()));
         bus.add_item(BusItem::new(0xA000, 0xBFFF, cart.clone()));
         bus.add_item(BusItem::new(0xFF01, 0xFF02, stu.clone()));
+        bus.add_item(BusItem::new(0xFF80, 0xFFFE, zero_page.clone()));
 
         Dmg {
             cpu: Cpu::new(),
