@@ -6,6 +6,7 @@ use crate::bus::{Bus, BusItem};
 use crate::interrupt::InterruptStatus;
 use crate::cartrige::{Cartrige};
 use crate::ppu::{PPU};
+use crate::serial::{SerialUnit};
 
 pub struct Dmg{
     pub cpu:Cpu,
@@ -24,6 +25,7 @@ impl Dmg {
         let isr = Rc::new(RefCell::new(InterruptStatus::new()));
         let cart = Rc::new(RefCell::new(Cartrige::new()));
         let ppu = Rc::new(RefCell::new(PPU::new()));
+        let stu = Rc::new(RefCell::new(SerialUnit::new()));
 
         // Map components to the bus.
         let mut bus = Bus::new();
@@ -32,6 +34,7 @@ impl Dmg {
         bus.add_item(BusItem::new(0xFFFF, 0xFFFF, isr.clone()));
         bus.add_item(BusItem::new(0x0000, 0x7FFF, cart.clone()));
         bus.add_item(BusItem::new(0xA000, 0xBFFF, cart.clone()));
+        bus.add_item(BusItem::new(0xFF01, 0xFF02, stu.clone()));
 
         Dmg {
             cpu: Cpu::new(),
