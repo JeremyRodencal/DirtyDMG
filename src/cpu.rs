@@ -124,7 +124,9 @@ pub struct Cpu {
     /// Tracks the current cycle number.
     cycle: u64,       
     /// Tracks if interrupts are enabled or disabled.
-    isr_en: bool      
+    isr_en: bool,
+    /// Tracks if the next "instruction" is the start of an ISR.
+    isr_pending: bool,
 }
 
 #[allow(dead_code)]
@@ -142,6 +144,7 @@ impl Cpu {
             busy_cycles: 0,
             cycle: 0,
             isr_en: false,
+            isr_pending: false,
         }
     }
 
@@ -233,10 +236,18 @@ impl Cpu {
         return started;
     }
 
-    pub fn update(&mut self, bus: &mut impl BusRW, is: &mut InterruptStatus) -> u8
+    pub fn handle_interrupts(&mut self, bus: &mut impl BusRW, is: &mut InterruptStatus){
+        if self.update_interrupts(bus, is)
+        {
+            self.busy_cycles = Cpu::ISR_OVERHEAD_CYCLES as u32;
+            self.isr_pending = true;
+        }
+    }
+
+    pub fn update(&mut self, bus: &mut impl BusRW) -> u8
     {
         // Handle any pending interrupts
-        if self.update_interrupts(bus, is)
+        if self.isr_pending
         {
             self.busy_cycles = Cpu::ISR_OVERHEAD_CYCLES as u32;
         }
@@ -5846,7 +5857,8 @@ mod test {
         cpu.isr_en = true;
         let mut ram = get_ram();
 
-        let cycles = cpu.update(&mut ram, is);
+        cpu.handle_interrupts(&mut ram, is);
+        let cycles = cpu.update(&mut ram);
 
         assert_eq!(cpu.isr_en, false);
         assert_eq!(cpu.reg.pc, addr);
@@ -5928,7 +5940,8 @@ mod test {
         // Ram is blank
         let mut ram = get_ram();
 
-        let cycles = cpu.update(&mut ram, &mut is);
+        cpu.handle_interrupts(&mut ram, &mut is);
+        let cycles = cpu.update(&mut ram);
 
         // Cpu should have executed a NOP since ram is zeroed.
         assert_eq!(cycles, 1);
