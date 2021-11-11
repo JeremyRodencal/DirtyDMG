@@ -249,9 +249,12 @@ impl PPU {
 
     const OAM_DMA_TRANSFER_TICKS: u8 = 160; // In cpu ticks or "T" cycles.
 
-    ///#Executes the specified number of clock ticks.
-    pub fn execute_ticks(&mut self, ticks:u16, bus:&mut impl BusRW){
+    /// Checks if a DMA transfer is currently executing.
+    fn dma_active(&self) -> bool{
+        return self.oam_dma_ticks != 0;
+    }
 
+    fn update_dma(&mut self, ticks:u16, bus:&mut impl BusRW){
         // If there is a DMA transfer in progress
         if self.oam_dma_ticks > 0 {
             // If the transfer was just initiated.
@@ -266,6 +269,11 @@ impl PPU {
                 self.oam_dma_ticks = 0;
             }
         }
+    }
+
+    /// # Executes the specified number of clock ticks.
+    pub fn execute_ticks(&mut self, ticks:u16, bus:&mut impl BusRW){
+        self.update_dma(ticks, bus);
     }
 
     pub fn new() -> PPU {
@@ -305,11 +313,6 @@ impl PPU {
             oam_dma_src: 0,
             oam_dma_ticks: 0,
         }
-    }
-
-    /// Checks if a DMA transfer is currently executing.
-    fn dma_active(&self) -> bool{
-        return self.oam_dma_ticks != 0;
     }
 
     fn tile_write(&mut self, data:u8, addr:usize)
