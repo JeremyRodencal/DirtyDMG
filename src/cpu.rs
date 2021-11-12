@@ -1478,9 +1478,42 @@ impl Cpu {
                 self.busy_cycles += 2;
             },
 
-            _ => panic!("not implemented")
+            Daa => {
+                let sub = self.reg.f & Regs::SUB_FLAG != 0;
+                let mut cflag = false;
+
+                if !sub {  
+                    // after an addition, adjust if (half-)carry occurred or if result is out of bounds
+                    if (self.reg.f & Regs::CARRY_FLAG != 0) || (self.reg.a > 0x99) { 
+                        self.reg.a = self.reg.a.wrapping_add(0x60);
+                        cflag = true;
+                    }
+                    if (self.reg.f & Regs::HCARRY_FLAG != 0) || (self.reg.a & 0x0f) > 0x09 {
+                        self.reg.a = self.reg.a.wrapping_add(0x6);
+                    }
+                } else {  // after a subtraction, only adjust if (half-)carry occurred
+                    if self.reg.f & Regs::CARRY_FLAG != 0 { 
+                        self.reg.a = self.reg.a.wrapping_sub(0x60);
+                        cflag = true;
+                    }
+                    if self.reg.f & Regs::HCARRY_FLAG != 0 { 
+                        self.reg.a = self.reg.a.wrapping_sub(0x6);
+                    }
+                }
+
+                self.reg.f &= Regs::SUB_FLAG;
+                if self.reg.a == 0 {
+                    self.reg.f |= Regs::ZERO_FLAG;
+                }
+                if cflag {
+                    self.reg.f |= Regs::CARRY_FLAG;
+                }
+            }
+
+            x => {panic!("not implemented {:?}", x);}
         }
     }
+
 }
 
 #[allow(dead_code)]
@@ -3458,6 +3491,27 @@ mod test {
         assert_eq!(tp.get_value(addr_mode), 1<<index);
     }
 
+    fn run_daa_test_case(flags:u8, val:u8, e_flags:u8, e_val:u8) {
+        let inst = [0x27];
+        let mut ram = get_ram();
+        let mut cpu = Cpu::new();
+        load_into_ram(&mut ram, &inst);
+
+        cpu.reg.a = val;
+        cpu.reg.f = flags;
+
+        cpu.execute_instruction(&mut ram);
+
+        assert_eq!(cpu.reg.f, e_flags, 
+            "Flags didn't match flags: {:#X}, e_flags: {:#X}\nval: {:#X}, e_val: {:#X}\n", 
+            cpu.reg.f, e_flags, 
+            cpu.reg.a, e_val);
+        assert_eq!(cpu.reg.a, e_val, 
+            "Flags didn't match flags: {:#X}, e_flags: {:#X}\nval: {:#X}, e_val: {:#X}\n", 
+            cpu.reg.f, e_flags, 
+            cpu.reg.a, e_val);
+    }
+
     #[test]
     fn cpu_0x00()
     {
@@ -3922,11 +3976,24 @@ mod test {
     }
 
     #[test]
-    #[ignore]
     fn cpu_0x27()
     {
-        //Daa
-        assert_eq!(1, 2);
+        // Sets zero flag if result is zero.
+        run_daa_test_case(0, 0, Regs::ZERO_FLAG, 0);
+        // Leaves sub flag alone
+        run_daa_test_case(Regs::SUB_FLAG, 1, Regs::SUB_FLAG, 1);
+
+        // Wraps lower nibble in half carry add case.
+        run_daa_test_case(Regs::HCARRY_FLAG, 0x12, 0, 0x18);
+        // Wraps lower nibble in no half carry overflow case.
+        run_daa_test_case(0, 0xB, 0, 0x11);
+        // Wraps lower nibble in half carry subtract case
+        run_daa_test_case(Regs::HCARRY_FLAG | Regs::SUB_FLAG, 0xF, Regs::SUB_FLAG, 0x09);
+
+        // Wraps Upper nibble in carry case
+        run_daa_test_case(0, 0x9A, Regs::CARRY_FLAG | Regs::ZERO_FLAG, 0x00);
+        run_daa_test_case(Regs::SUB_FLAG | Regs::HCARRY_FLAG | Regs::CARRY_FLAG, 0xFF, 
+                          Regs::CARRY_FLAG | Regs::SUB_FLAG, 0x99);
     }
 
     #[test]
