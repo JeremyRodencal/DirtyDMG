@@ -18,17 +18,17 @@ enum Register {
     SP
 }
 
-struct Regs {
-    a:u8,
-    f:u8,
-    b:u8,
-    c:u8,
-    d:u8,
-    e:u8,
-    h:u8,
-    l:u8,
-    sp: u16,
-    pc: u16,
+pub struct Regs {
+    pub a:u8,
+    pub f:u8,
+    pub b:u8,
+    pub c:u8,
+    pub d:u8,
+    pub e:u8,
+    pub h:u8,
+    pub l:u8,
+    pub sp: u16,
+    pub pc: u16,
 }
 
 impl Regs {
@@ -118,7 +118,7 @@ impl Regs {
 #[allow(dead_code)]
 pub struct Cpu {
     /// CPU registers.
-    reg: Regs,
+    pub reg: Regs,
     /// Tracks cycles until the cpu will be ready to execute again.
     busy_cycles: u32, 
     /// Tracks the current cycle number.
@@ -1534,7 +1534,7 @@ impl Cpu {
 }
 
 #[allow(dead_code)]
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 enum JumpCondition {
     Always, // Always jump
     Z,      // Jump if zero flag set
@@ -1544,6 +1544,7 @@ enum JumpCondition {
 }
 
 #[allow(dead_code)]
+#[derive(Debug)]
 enum Operation {
     // A no operation.
     Nop,
