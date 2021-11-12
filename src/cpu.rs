@@ -278,6 +278,33 @@ impl Cpu {
         return self.busy_cycles as u8;
     }
 
+    fn subc(&mut self, sub:u8){
+        let sub = sub as u16;
+        let minuend = self.reg.a as u16 | 0x100;
+        let carry = ((self.reg.f & Regs::CARRY_FLAG) >> 4) as u16;
+
+        let result = minuend - sub - carry;
+        self.reg.a = result as u8;
+
+        // Clear all flag bits while setting sub flag.
+        self.reg.f = Regs::SUB_FLAG;
+
+        // Check for carry flag
+        if result & 0x100 == 0{
+            self.reg.f |= Regs::CARRY_FLAG;
+        }
+
+        // Check for the half carry flag
+        if (minuend ^ sub) & 0x10 != (result & 0x10){
+            self.reg.f |= Regs::HCARRY_FLAG;
+        }
+
+        // Check for the zero flag
+        if self.reg.a == 0 {
+            self.reg.f |= Regs::ZERO_FLAG;
+        }
+    }
+
     fn execute_operation(&mut self, bus:&mut impl BusRW, data: &[u8], op:&Operation)
     {
         use Operation::*;
@@ -766,86 +793,15 @@ impl Cpu {
             }
 
             SbcR {src} => {
-                // May not be accurate enough?
-                // Should set HCARRY and CARRY if subtracting 256?
-                let minuend = self.reg.a;
-                let mut sub = self.reg.read8(*src); 
-                if self.reg.f & Regs::CARRY_FLAG != 0 {
-                    sub = sub.wrapping_add(1);
-                }
-                self.reg.a = self.reg.a.wrapping_sub(sub);
-                self.reg.f = Regs::SUB_FLAG;
-
-                // Check for carry flag
-                if self.reg.a > minuend {
-                    self.reg.f |= Regs::CARRY_FLAG;
-                }
-
-                // Check for the half carry flag
-                if (self.reg.a << 4) > (minuend << 4){
-                    self.reg.f |= Regs::HCARRY_FLAG;
-                }
-
-                // Check for the zero flag
-                if self.reg.a == 0 {
-                    self.reg.f |= Regs::ZERO_FLAG;
-                }
+                self.subc(self.reg.read8(*src));
             }
 
             SbcM => {
-                // May not be accurate enough?
-                // Should set HCARRY and CARRY if subtracting 256?
-                let minuend = self.reg.a;
-                let mut sub = bus.bus_read8(self.reg.read16(Register::HL) as usize);
-                if self.reg.f & Regs::CARRY_FLAG != 0 {
-                    sub = sub.wrapping_add(1);
-                }
-                self.reg.a = self.reg.a.wrapping_sub(sub);
-
-                self.reg.f = Regs::SUB_FLAG;
-
-                // Check for carry flag
-                if self.reg.a > minuend {
-                    self.reg.f |= Regs::CARRY_FLAG;
-                }
-
-                // Check for the half carry flag
-                if (self.reg.a << 4) > (minuend << 4){
-                    self.reg.f |= Regs::HCARRY_FLAG;
-                }
-
-                // Check for the zero flag
-                if self.reg.a == 0 {
-                    self.reg.f |= Regs::ZERO_FLAG;
-                }
+                self.subc(bus.bus_read8(self.reg.read16(Register::HL) as usize));
             },
 
             SbcI => {
-                // May not be accurate enough?
-                // Should set HCARRY and CARRY if subtracting 256?
-                let minuend = self.reg.a;
-                let mut sub = data[1];
-                if self.reg.f & Regs::CARRY_FLAG != 0 {
-                    sub = sub.wrapping_add(1);
-                }
-                self.reg.a = self.reg.a.wrapping_sub(sub);
-
-                self.reg.f = Regs::SUB_FLAG;
-
-                // Check for carry flag
-                if self.reg.a > minuend {
-                    self.reg.f |= Regs::CARRY_FLAG;
-                }
-
-                // Check for the half carry flag
-                if (self.reg.a << 4) > (minuend << 4){
-                    self.reg.f |= Regs::HCARRY_FLAG;
-                }
-
-                // Check for the zero flag
-                if self.reg.a == 0 {
-                    self.reg.f |= Regs::ZERO_FLAG;
-                }
+                self.subc(data[1]);
             }
 
             AndR{src} => {
