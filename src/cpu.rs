@@ -78,7 +78,7 @@ impl Regs {
     fn write8(&mut self, reg:Register, value:u8) {
         match reg {
             Register::A => self.a = value,
-            Register::F => self.f = value,
+            Register::F => self.f = value & 0xF0,
             Register::B => self.b = value,
             Register::C => self.c = value,
             Register::D => self.d = value,
@@ -93,7 +93,7 @@ impl Regs {
         match reg{
             Register::AF => { 
                 self.a = (value >> 8) as u8;
-                self.f = value as u8;
+                self.f = value as u8 & 0xF0;
             },
             Register::BC => {
                 self.b = (value >> 8) as u8;
@@ -2997,7 +2997,12 @@ mod test {
         assert_eq!(cycles, 3);
         assert_eq!(cpu.reg.pc, 1);
         assert_eq!(cpu.reg.sp, address + 2);
-        assert_eq!(cpu.reg.read16(dst), value);
+        if dst != Register::AF{
+            assert_eq!(cpu.reg.read16(dst), value);
+        }
+        else {
+            assert_eq!(cpu.reg.read16(dst), value & 0xFFF0);
+        }
     }
     
     fn test_op_jp(inst: &[u8], cond:JumpCondition)
@@ -3085,7 +3090,11 @@ mod test {
         assert_eq!(cycles, 4);
         assert_eq!(cpu.reg.pc, 1);
         assert_eq!(cpu.reg.sp, address - 2);
-        assert_eq!(ram.bus_read16(cpu.reg.sp as usize), value);
+        if src != Register::AF{
+            assert_eq!(ram.bus_read16(cpu.reg.sp as usize), value);
+        } else {
+            assert_eq!(ram.bus_read16(cpu.reg.sp as usize), value & 0xFFF0);
+        }
     }
 
     fn test_op_rst(inst: &[u8], index: u8)
