@@ -57,7 +57,7 @@ impl SerialUnit {
                 // Clear the sb byte
                 self.sb = 0;
                 // Clear the transfer active flag
-                self.sb ^= SerialUnit::SC_ACTIVE_MASK;
+                self.sc ^= SerialUnit::SC_ACTIVE_MASK;
                 // Clear the cycle count
                 self.cycle_count = 0;
             }
