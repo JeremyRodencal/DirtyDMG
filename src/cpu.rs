@@ -386,6 +386,17 @@ impl Cpu {
         return result;
     }
 
+    fn bit(&mut self, val:u8, index:u8) {
+        // retain the Carry flag, set the half carry flag, clear all others.
+        self.reg.f &= Regs::CARRY_FLAG;
+        self.reg.f |= Regs::HCARRY_FLAG;
+
+        // set the zero flag if the index bit is not set.
+        if (val & (1<<index)) == 0 {
+            self.reg.f |= Regs::ZERO_FLAG;
+        }
+    }
+
     fn execute_operation(&mut self, bus:&mut impl BusRW, data: &[u8], op:&Operation)
     {
         use Operation::*;
@@ -1408,28 +1419,13 @@ impl Cpu {
             },
             
             BitR{index, src} => {
-                // retain the Carry flag, set the sub flag, clear all others.
-                self.reg.f &= Regs::CARRY_FLAG;
-                self.reg.f |= Regs::SUB_FLAG;
-
-                // set the zero flag if the index bit is not set.
                 let val = self.reg.read8(*src);
-                if (val & (1<<index)) == 0 {
-                    self.reg.f |= Regs::ZERO_FLAG;
-                }
+                self.bit(val, *index);
             },
 
             BitM{index} => {
-                // retain the Carry flag, set the sub flag, clear all others.
-                self.reg.f &= Regs::CARRY_FLAG;
-                self.reg.f |= Regs::SUB_FLAG;
-
-                // set the zero flag if the index bit is not set.
                 let val = bus.bus_read8(self.reg.read16(Register::HL) as usize);
-                if (val & (1<<index)) == 0 {
-                    self.reg.f |= Regs::ZERO_FLAG;
-                }
-
+                self.bit(val, *index);
                 self.busy_cycles += 2;
             },
 
@@ -3398,7 +3394,7 @@ mod test {
 
         tp.check_cycles(cycles);
         tp.check_length(inst.len() as u16);
-        tp.check_flags(Regs::SUB_FLAG | Regs::CARRY_FLAG);
+        tp.check_flags(Regs::HCARRY_FLAG | Regs::CARRY_FLAG);
 
         ////////
         // Bit cleared case
@@ -3407,7 +3403,7 @@ mod test {
 
         tp.execute_instruction();
 
-        tp.check_flags(Regs::SUB_FLAG | Regs::ZERO_FLAG);
+        tp.check_flags(Regs::HCARRY_FLAG | Regs::ZERO_FLAG);
     }
 
     fn test_op_res(inst: &[u8], index:u8, addr_mode:AddressingMode, cycles:u8)
