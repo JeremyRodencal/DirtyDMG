@@ -571,20 +571,23 @@ impl Cpu {
             }
 
             AddCR{src} => {
-                let initial = self.reg.read8(*src);
-                let addend =  (self.reg.f & Regs::CARRY_FLAG) >> 4;
-                self.reg.a  = initial.wrapping_add(addend);
-                
+                let initial = self.reg.a as u16;
+                let addend_a = self.reg.read8(*src) as u16;
+                let addend_b = (self.reg.f & Regs::CARRY_FLAG) as u16 >> 4;
+
                 self.reg.f = 0;
 
-                // Check for carry flag
-                if self.reg.a < initial {
-                    self.reg.f |= Regs::CARRY_FLAG;
+                let result = initial + addend_a + addend_b;
+                self.reg.a = result as u8;
+
+                // Check for half carry.
+                if (initial ^ addend_a) & 0x10 != (result & 0x10){
+                    self.reg.f |= Regs::HCARRY_FLAG;
                 }
 
-                // Check for the half carry flag
-                if (initial ^ addend) & 0x10 != (self.reg.a & 0x10) {
-                    self.reg.f |= Regs::HCARRY_FLAG;
+                // Set carry if combined value overflows.
+                if result > 0xFF  {
+                    self.reg.f |= Regs::CARRY_FLAG;
                 }
 
                 // Check for the zero flag
@@ -642,20 +645,23 @@ impl Cpu {
             }
 
             AddCM => {
-                let initial = bus.bus_read8(self.reg.read16(Register::HL) as usize);
-                let addend =  (self.reg.f & Regs::CARRY_FLAG) >> 4;
-                self.reg.a  = initial.wrapping_add(addend);
-                
+                let initial = self.reg.a as u16;
+                let addend_a =bus.bus_read8(self.reg.read16(Register::HL) as usize) as u16;
+                let addend_b = (self.reg.f & Regs::CARRY_FLAG) as u16 >> 4;
+
                 self.reg.f = 0;
 
-                // Check for carry flag
-                if self.reg.a < initial {
-                    self.reg.f |= Regs::CARRY_FLAG;
+                let result = initial + addend_a + addend_b;
+                self.reg.a = result as u8;
+
+                // Check for half carry.
+                if (initial ^ addend_a) & 0x10 != (result & 0x10){
+                    self.reg.f |= Regs::HCARRY_FLAG;
                 }
 
-                // Check for the half carry flag
-                if (initial ^ addend) & 0x10 != (self.reg.a & 0x10) {
-                    self.reg.f |= Regs::HCARRY_FLAG;
+                // Set carry if combined value overflows.
+                if result > 0xFF  {
+                    self.reg.f |= Regs::CARRY_FLAG;
                 }
 
                 // Check for the zero flag
@@ -665,20 +671,23 @@ impl Cpu {
             }
 
             AddCI => {
-                let initial = data[1];
-                let addend =  (self.reg.f & Regs::CARRY_FLAG) >> 4;
-                self.reg.a  = initial.wrapping_add(addend);
-                
+                let initial = self.reg.a as u16;
+                let addend_a = data[1] as u16;
+                let addend_b = (self.reg.f & Regs::CARRY_FLAG) as u16 >> 4;
+
                 self.reg.f = 0;
 
-                // Check for carry flag
-                if self.reg.a < initial {
-                    self.reg.f |= Regs::CARRY_FLAG;
+                let result = initial + addend_a + addend_b;
+                self.reg.a = result as u8;
+
+                // Check for half carry.
+                if (initial ^ addend_a) & 0x10 != (result & 0x10){
+                    self.reg.f |= Regs::HCARRY_FLAG;
                 }
 
-                // Check for the half carry flag
-                if (initial ^ addend) & 0x10 != (self.reg.a & 0x10) {
-                    self.reg.f |= Regs::HCARRY_FLAG;
+                // Set carry if combined value overflows.
+                if result > 0xFF  {
+                    self.reg.f |= Regs::CARRY_FLAG;
                 }
 
                 // Check for the zero flag
@@ -2588,13 +2597,16 @@ mod test {
         set_src(&mut cpu, &mut ram, 0xFF);
         cpu.reg.f = Regs::CARRY_FLAG;
 
+        let mut expected = 23;
         if !self_reference{
             cpu.reg.a = 23; // Just a nonzero value.
+        } else {
+            expected = 0xFF;
         }
         let cycles = cpu.execute_instruction(&mut ram);
         assert_eq!(cpu.reg.pc, inst.len() as u16);
         assert_eq!(cycles, cycle_count);
-        assert_eq!(cpu.reg.a, 0);
+        assert_eq!(cpu.reg.a, expected);
     }
 
     fn test_op_addcr(inst: &[u8], src:Register)
@@ -4795,33 +4807,7 @@ mod test {
     #[test]
     fn cpu_0x8E()
     {
-        let mut cpu = Cpu::new();
-        let mut ram = get_ram();
-
-        // Initialize Ram
-        load_into_ram(&mut ram, &[0x8E]);
-        let address = 0x32;
-        let value = 0xFF;
-        ram.bus_write8(address, value);
-
-        // Set the carry flag
-        cpu.reg.write16(Register::HL, address as u16);
-        cpu.reg.f = Regs::CARRY_FLAG;
-        cpu.reg.a = 23; // Just a nonzero value.
-
-        // Execute the instruction
-        let cycles = cpu.execute_instruction(&mut ram);
-        assert_eq!(cpu.reg.pc, 1);
-        assert_eq!(cycles, 2);
-        assert_eq!(cpu.reg.a, 0);
-        assert_eq!(cpu.reg.f, Regs::CARRY_FLAG | Regs::HCARRY_FLAG | Regs::ZERO_FLAG);
-
-        // Reset, reload the address register
-        cpu = Cpu::new();
-        cpu.reg.write16(Register::HL, address as u16);
-        cpu.execute_instruction(&mut ram);
-        assert_eq!(cpu.reg.a, 0xFF);
-        assert_eq!(cpu.reg.f, 0);
+        test_op_addc(&[0x8E], get_memory_HL_setter(0x32), 2);
     }
 
     #[test]
