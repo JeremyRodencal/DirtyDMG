@@ -186,27 +186,27 @@ impl Cartrige {
 impl BusRW for Cartrige {
     fn bus_read8(&mut self, addr:usize) -> u8
     {
-        self.mapper.as_mut().read(&mut self.ram, &mut self.rom, addr as u16)
+        self.mapper.as_mut().read(&mut self.ram[..], &mut self.rom[..], addr as u16)
     }
 
     fn bus_write8(&mut self, addr:usize, value:u8)
     {
-        self.mapper.as_mut().write(&mut self.ram, &mut self.rom, addr as u16, value);
+        self.mapper.as_mut().write(&mut self.ram[..], &mut self.rom[..], addr as u16, value);
     }
 
     fn bus_read16(&mut self, addr: usize) -> u16
     {
         let addr = addr as u16;
-        let mut value: u16 = self.mapper.as_mut().read(&mut self.ram, &mut self.rom, addr) as u16;
-        value |= (self.mapper.as_mut().read(&mut self.ram, &mut self.rom, addr+1) as u16) << 8;
+        let mut value: u16 = self.mapper.as_mut().read(&mut self.ram[..], &mut self.rom[..], addr) as u16;
+        value |= (self.mapper.as_mut().read(&mut self.ram[..], &mut self.rom[..], addr+1) as u16) << 8;
         return value;
     }
 
     fn bus_write16(&mut self, addr: usize, value: u16)
     {
         let addr = addr as u16;
-        self.mapper.as_mut().write(&mut self.ram, &mut self.rom, addr, (value & 0xFF) as u8);
-        self.mapper.as_mut().write(&mut self.ram, &mut self.rom, addr+1, (value >> 8) as u8);
+        self.mapper.as_mut().write(&mut self.ram[..], &mut self.rom[..], addr, (value & 0xFF) as u8);
+        self.mapper.as_mut().write(&mut self.ram[..], &mut self.rom[..], addr+1, (value >> 8) as u8);
     }
 }
 
@@ -275,7 +275,7 @@ mod mbc1 {
         //     panic!("bus_write16 is not yet implemented for Mmc1Cart")
         // }
 
-        fn read(&mut self, rom: &mut [u8], _: &mut [u8], addr:u16) -> u8{
+        fn read(&mut self, _: &mut [u8], rom: &mut [u8], addr:u16) -> u8{
             match addr {
                 // Return values strait up if they are in the rom area.
                 0x0000..=0x7FFF => {
