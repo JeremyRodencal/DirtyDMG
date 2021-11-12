@@ -305,6 +305,87 @@ impl Cpu {
         }
     }
 
+    fn rl(&mut self, val: u8)->u8
+    {
+        let result = (val << 1) | ((self.reg.f & Regs::CARRY_FLAG) >> 4);
+
+        // Clear, then set the zero flag if needed.
+        self.reg.f = 
+            if result == 0 {Regs::ZERO_FLAG}
+            else {0};
+
+        // Check for the carry flag
+        if (val & 0x80) != 0 {
+            self.reg.f |= Regs::CARRY_FLAG;
+        }
+
+        return result;
+    }
+
+    fn rr(&mut self, val: u8) -> u8{
+        let result = val >> 1 | ((self.reg.f & Regs::CARRY_FLAG) << 3);
+
+        // Clear, then set the zero flag if needed.
+        self.reg.f = 
+            if result == 0 {Regs::ZERO_FLAG}
+            else {0};
+
+        // Check for the carry flag
+        if (val & 0x01) != 0 {
+            self.reg.f |= Regs::CARRY_FLAG;
+        }
+
+        return result;
+    }
+
+    fn sla(&mut self, val: u8) -> u8 {
+        let result = val << 1;
+
+        // Clear, then set the zero flag if needed.
+        self.reg.f = 
+            if result == 0 {Regs::ZERO_FLAG}
+            else {0};
+
+        // Check for the carry flag
+        if (val & 0x80) != 0 {
+            self.reg.f |= Regs::CARRY_FLAG;
+        }
+
+        return result;
+    }
+
+    fn sra(&mut self, val: u8) -> u8 {
+        let result = (val >> 1) | (val & 0x80);
+
+        // Clear, then set the zero flag if needed.
+        self.reg.f = 
+            if result == 0 {Regs::ZERO_FLAG}
+            else {0};
+
+        // Check for the carry flag
+        if (val & 0x01) != 0 {
+            self.reg.f |= Regs::CARRY_FLAG;
+        }
+
+        return result;
+    }
+
+    fn srl(&mut self, val: u8) -> u8 {
+        let result = val >> 1;
+
+        // Clear, then set the zero flag if needed.
+        self.reg.f = 
+            if result == 0 {Regs::ZERO_FLAG}
+            else {0};
+
+        // Check for the carry flag
+        if (val & 0x01) != 0 {
+            self.reg.f |= Regs::CARRY_FLAG;
+        }
+
+        return result;
+    }
+
     fn execute_operation(&mut self, bus:&mut impl BusRW, data: &[u8], op:&Operation)
     {
         use Operation::*;
@@ -1238,142 +1319,54 @@ impl Cpu {
             },
 
             RlR{src} => {
-                let val = self.reg.read8(*src);
-                self.reg.write8( *src, 
-                    (val << 1) | ((self.reg.f & Regs::CARRY_FLAG) >> 4));
-
-                // Clear, then set the zero flag if needed.
-                self.reg.f = 
-                    if val == 0 {Regs::ZERO_FLAG}
-                    else {0};
-
-                // Check for the carry flag
-                if (val & 0x80) != 0 {
-                    self.reg.f |= Regs::CARRY_FLAG;
-                }
+                let val = self.rl(self.reg.read8(*src));
+                self.reg.write8(*src, val);
             },
 
             RlM => {
                 let addr = self.reg.read16(Register::HL) as usize;
-                let val = bus.bus_read8(addr);
-                bus.bus_write8(addr, 
-                    (val << 1) | ((self.reg.f & Regs::CARRY_FLAG) >> 4));
-
-                // Clear, then set the zero flag if needed.
-                self.reg.f = 
-                    if val == 0 {Regs::ZERO_FLAG}
-                    else {0};
-
-                // Check for the carry flag
-                if (val & 0x80) != 0 {
-                    self.reg.f |= Regs::CARRY_FLAG;
-                }
-
+                let val = self.rl(bus.bus_read8(addr));
+                bus.bus_write8(addr, val);
                 self.busy_cycles += 2;
             },
 
             RrR{src} => {
-                let val = self.reg.read8(*src);
-                self.reg.write8(*src, 
-                    val >> 1 |
-                    ((self.reg.f & Regs::CARRY_FLAG) << 3)
-                );
-
-                // Clear, then set the zero flag if needed.
-                self.reg.f = 
-                    if val == 0 {Regs::ZERO_FLAG}
-                    else {0};
-
-                // Check for the carry flag
-                if (val & 0x01  ) != 0 {
-                    self.reg.f |= Regs::CARRY_FLAG;
-                }
+                let result = self.rr(self.reg.read8(*src));
+                self.reg.write8(*src, result);
             },
 
             RrM => {
                 let addr = self.reg.read16(Register::HL) as usize;
-                let val = bus.bus_read8(addr);
-                bus.bus_write8(addr, 
-                    val >> 1 |
-                    ((self.reg.f & Regs::CARRY_FLAG) << 3)
-                );
-
-                // Clear, then set the zero flag if needed.
-                self.reg.f = 
-                    if val == 0 {Regs::ZERO_FLAG}
-                    else {0};
-
-                // Check for the carry flag
-                if (val & 0x01  ) != 0 {
-                    self.reg.f |= Regs::CARRY_FLAG;
-                }
-
+                let result = self.rr(bus.bus_read8(addr));
+                bus.bus_write8(addr, result);
                 self.busy_cycles += 2;
             },
 
             SlaR{src} => {
                 let val = self.reg.read8(*src);
-                self.reg.write8( *src, val << 1);
-
-                // Clear, then set the zero flag if needed.
-                self.reg.f = 
-                    if val == 0 {Regs::ZERO_FLAG}
-                    else {0};
-
-                // Check for the carry flag
-                if (val & 0x80) != 0 {
-                    self.reg.f |= Regs::CARRY_FLAG;
-                }
+                let result = self.sla(val);
+                self.reg.write8( *src, result);
             },
 
             SlaM => {
                 let addr = self.reg.read16(Register::HL) as usize;
                 let val = bus.bus_read8(addr);
-                bus.bus_write8(addr, val << 1);
-
-                // Clear, then set the zero flag if needed.
-                self.reg.f = 
-                    if val == 0 {Regs::ZERO_FLAG}
-                    else {0};
-
-                // Check for the carry flag
-                if (val & 0x80) != 0 {
-                    self.reg.f |= Regs::CARRY_FLAG;
-                }
-
+                let result = self.sla(val);
+                bus.bus_write8(addr, result);
                 self.busy_cycles += 2;
             }
 
             SraR{src} => {
                 let val = self.reg.read8(*src);
-                self.reg.write8( *src, (val >> 1) | (val & 0x80));
-
-                // Clear, then set the zero flag if needed.
-                self.reg.f = 
-                    if val == 0 {Regs::ZERO_FLAG}
-                    else {0};
-
-                // Check for the carry flag
-                if (val & 0x01) != 0 {
-                    self.reg.f |= Regs::CARRY_FLAG;
-                }
+                let result = self.sra(val);
+                self.reg.write8( *src, result);
             },
 
             SraM => {
                 let addr = self.reg.read16(Register::HL) as usize;
                 let val = bus.bus_read8(addr);
-                bus.bus_write8(addr, (val >> 1) | (val & 0x80));
-
-                // Clear, then set the zero flag if needed.
-                self.reg.f = 
-                    if val == 0 {Regs::ZERO_FLAG}
-                    else {0};
-
-                // Check for the carry flag
-                if (val & 0x01) != 0 {
-                    self.reg.f |= Regs::CARRY_FLAG;
-                }
-
+                let result = self.sra(val);
+                bus.bus_write8(addr, result);
                 self.busy_cycles += 2;
             },
 
@@ -1402,34 +1395,15 @@ impl Cpu {
 
             SrlR{src} => {
                 let val = self.reg.read8(*src);
-                self.reg.write8( *src, (val >> 1));
-
-                // Clear, then set the zero flag if needed.
-                self.reg.f = 
-                    if val == 0 {Regs::ZERO_FLAG}
-                    else {0};
-
-                // Check for the carry flag
-                if (val & 0x01) != 0 {
-                    self.reg.f |= Regs::CARRY_FLAG;
-                }
+                let result = self.srl(val);
+                self.reg.write8( *src, result);
             },
 
             SrlM => {
                 let addr = self.reg.read16(Register::HL) as usize;
                 let val = bus.bus_read8(addr);
-                bus.bus_write8(addr, val >> 1);
-
-                // Clear, then set the zero flag if needed.
-                self.reg.f = 
-                    if val == 0 {Regs::ZERO_FLAG}
-                    else {0};
-
-                // Check for the carry flag
-                if (val & 0x01) != 0 {
-                    self.reg.f |= Regs::CARRY_FLAG;
-                }
-
+                let result = self.srl(val);
+                bus.bus_write8(addr, result);
                 self.busy_cycles += 2;
             },
             
