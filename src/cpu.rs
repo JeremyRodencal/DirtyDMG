@@ -512,13 +512,25 @@ impl Cpu {
                 self.reg.write16(Register::HL, result);
 
                 self.reg.f = 0;
-                // Half carry only occurs on most significant byte.
-                if (initial ^ addend) & 0x1000 != result & 0x1000 {
-                    self.reg.f = self.reg.f | Regs::HCARRY_FLAG;
-                }
-                // Set carry flag if needed.
-                if result < initial {
-                    self.reg.f = self.reg.f | Regs::CARRY_FLAG;
+                // If the addend was negative.
+                if addend & 0x8000 != 0{
+                    if (result & 0xFF) <= (initial & 0xFF)
+                    {
+                        self.reg.f |= Regs::CARRY_FLAG;
+                    }
+                    if (result & 0xF) <= (initial & 0xF)
+                    {
+                        self.reg.f |= Regs::HCARRY_FLAG;
+                    }
+                } 
+                // The addend was positive.
+                else {
+                    if (initial ^ addend) & 0x10 != result & 0x10 {
+                        self.reg.f = self.reg.f | Regs::HCARRY_FLAG;
+                    }
+                    if result & 0xFF < initial & 0xFF {
+                        self.reg.f = self.reg.f | Regs::CARRY_FLAG;
+                    }
                 }
             },
 
@@ -656,13 +668,25 @@ impl Cpu {
                 self.reg.write16(*dst, result);
 
                 self.reg.f = 0;
-                // Half carry only occurs on most significant byte.
-                if (initial ^ addend) & 0x1000 != result & 0x1000 {
-                    self.reg.f = self.reg.f | Regs::HCARRY_FLAG;
-                }
-                // Set carry flag if needed.
-                if result < initial {
-                    self.reg.f = self.reg.f | Regs::CARRY_FLAG;
+                // If the addend was negative.
+                if addend & 0x8000 != 0{
+                    if (result & 0xFF) <= (initial & 0xFF)
+                    {
+                        self.reg.f |= Regs::CARRY_FLAG;
+                    }
+                    if (result & 0xF) <= (initial & 0xF)
+                    {
+                        self.reg.f |= Regs::HCARRY_FLAG;
+                    }
+                } 
+                // The addend was positive.
+                else {
+                    if (initial ^ addend) & 0x10 != result & 0x10 {
+                        self.reg.f = self.reg.f | Regs::HCARRY_FLAG;
+                    }
+                    if result & 0xFF < initial & 0xFF {
+                        self.reg.f = self.reg.f | Regs::CARRY_FLAG;
+                    }
                 }
             },
 
