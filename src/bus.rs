@@ -94,7 +94,7 @@ impl BusRW for Bus {
     {
         match self.get_item(addr){
             Some(x) => x.bus_read8(addr),
-            None => 0
+            None => 0xff
         }
     }
 
