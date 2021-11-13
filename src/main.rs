@@ -6,6 +6,7 @@ mod interrupt;
 mod cartrige;
 mod ppu;
 mod serial;
+mod timer;
 
 use std::env;
 use std::io::{Error, ErrorKind};
@@ -55,5 +56,9 @@ fn main() {
         Ok(x) => {
             dmg.load_rom(&x).unwrap();
         }
+    }
+
+    loop {
+        dmg.update();
     }
 }

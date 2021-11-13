@@ -308,6 +308,7 @@ impl Cpu {
         self.busy_cycles = instruction.cycles as u32;
 
         // Execute the operation in the instruction
+        // println!("instruction: {:?}, data: [{:#X} {:#X} {:#X}] @ {:#X}", &instruction.op, data[0], data[1], data[2], self.reg.pc - 1);
         self.execute_operation(bus, &data, &instruction.op);
         return self.busy_cycles as u8;
     }
@@ -436,7 +437,9 @@ impl Cpu {
         use Operation::*;
         match op {
             Nop => (),
-            Stop => { panic!("Stop is not")},
+            Stop => { 
+                panic!("Stop instruction @ {:#4X}", self.reg.pc)
+            },
 
             // Move a register value into another register.
             LdRR{dst, src} => { 
