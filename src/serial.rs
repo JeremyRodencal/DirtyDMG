@@ -33,12 +33,12 @@ impl SerialUnit {
     }
 
     /// # Read but do not clear the last output byte.
-    fn peak_output(&self) -> Option<u8>{
+    pub fn peak_output(&self) -> Option<u8>{
         return self.output;
     }
 
     /// # Read and clear the last output byte.
-    fn get_output(&mut self) -> Option<u8>{
+    pub fn get_output(&mut self) -> Option<u8>{
         let ret = self.output;
         self.output = None;
         return ret;
