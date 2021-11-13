@@ -115,6 +115,12 @@ impl Regs {
     }
 }
 
+enum CpuMode {
+    Running,
+    Halted,
+    Stopped,
+}
+
 #[allow(dead_code)]
 pub struct Cpu {
     /// CPU registers.
@@ -127,6 +133,8 @@ pub struct Cpu {
     isr_en: bool,
     /// Tracks if the next "instruction" is the start of an ISR.
     isr_pending: bool,
+    /// Tracks if the cpu is running halted or stopped.
+    mode: CpuMode,
 }
 
 #[allow(dead_code)]
@@ -139,12 +147,13 @@ impl Cpu {
     const JOYPAD_ISR_ADDR:u16 = 0x60;
 
     pub fn new()->Cpu {
-        Cpu{
+        Cpu {
             reg:Regs::new(),
             busy_cycles: 0,
             cycle: 0,
             isr_en: false,
             isr_pending: false,
+            mode: CpuMode::Running,
         }
     }
 
@@ -178,17 +187,34 @@ impl Cpu {
         }
     }
 
-    fn start_isr(&mut self, bus: &mut impl BusRW, is: &mut InterruptStatus, addr: u16)
+    /// # Attempts to start an ISR.
+    /// 
+    /// If interrupts are enabled, the isr is started.
+    /// If interrupts are not enabled, the isr is not started.
+    /// If the cpu is halted, the cpu is always returned to the running mode.
+    /// 
+    /// Returns true if the ISR was started, false if it was not.
+    fn start_isr(&mut self, bus: &mut impl BusRW, is: &mut InterruptStatus, addr: u16) -> bool
     {
-        // Write the current PC to the stack
-        self.reg.sp = self.reg.sp.wrapping_sub(2);
-        bus.bus_write16(self.reg.sp as usize, self.reg.pc);
+        let started = self.isr_en;
+        if started {
+            // Write the current PC to the stack
+            self.reg.sp = self.reg.sp.wrapping_sub(2);
+            bus.bus_write16(self.reg.sp as usize, self.reg.pc);
 
-        // Update the program counter
-        self.reg.pc = addr;
+            // Update the program counter
+            self.reg.pc = addr;
 
-        // Disable interrupts
-        self.isr_en = false;
+            // Disable interrupts
+            self.isr_en = false;
+        }
+
+        // If we are currently halted, return to running.
+        if let CpuMode::Halted = self.mode {
+            self.mode = CpuMode::Running;
+        }
+
+        return started;
     }
 
     /// Checks for and handles pending interrupts
@@ -199,37 +225,39 @@ impl Cpu {
         let mut started:bool = false;
 
         // Check for interrupts if enabled.
-        if self.isr_en 
+        if is.is_vblank_active()
         {
-            started = true;
-            if is.is_vblank_active()
-            {
-                self.start_isr(bus, is, Cpu::VBLANK_ISR_ADDR);
+            if self.start_isr(bus, is, Cpu::VBLANK_ISR_ADDR){
+                started = true;
                 is.clear_vblank();
             }
-            else if is.is_lcdstat_active()
-            {
-                self.start_isr(bus, is, Cpu::LCD_ISR_ADDR);
+        }
+        else if is.is_lcdstat_active()
+        {
+            if self.start_isr(bus, is, Cpu::LCD_ISR_ADDR){
+                started = true;
                 is.clear_lcdstat();
             }
-            else if is.is_timer_active()
-            {
-                self.start_isr(bus, is, Cpu::TIMER_ISR_ADDR);
+        }
+        else if is.is_timer_active()
+        {
+            if self.start_isr(bus, is, Cpu::TIMER_ISR_ADDR){
+                started = true;
                 is.clear_timer();
             }
-            else if is.is_serial_active()
-            {
-                self.start_isr(bus, is, Cpu::SERIAL_ISR_ADDR);
+        }
+        else if is.is_serial_active()
+        {
+            if self.start_isr(bus, is, Cpu::SERIAL_ISR_ADDR){
+                started = true;
                 is.clear_serial();
             }
-            else if is.is_joypad_active()
-            {
-                self.start_isr(bus, is, Cpu::JOYPAD_ISR_ADDR);
+        }
+        else if is.is_joypad_active()
+        {
+            if self.start_isr(bus, is, Cpu::JOYPAD_ISR_ADDR){
+                started = true;
                 is.clear_joypad();
-            }
-            else
-            {
-                started = false;
             }
         }
 
@@ -250,11 +278,17 @@ impl Cpu {
         if self.isr_pending
         {
             self.busy_cycles = Cpu::ISR_OVERHEAD_CYCLES as u32;
+            self.isr_pending = false;
         }
-        // Execute a normal instruction.
+        // Not starting an interrupt.
         else
         {
-            self.execute_instruction(bus);
+            // Execute depending on the current cpu mode.
+            match self.mode {
+                CpuMode::Running => {self.execute_instruction(bus);}
+                CpuMode::Halted => { self.busy_cycles = 1; }
+                _ => {panic!("Cpu is in an unimplemented mode");}
+            }
         }
 
         return self.busy_cycles as u8;
@@ -1510,7 +1544,9 @@ impl Cpu {
                 }
             }
 
-            x => {panic!("not implemented {:?}", x);}
+            Halt => {
+                self.mode = CpuMode::Halted;
+            },
         }
     }
 
