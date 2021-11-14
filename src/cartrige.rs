@@ -273,15 +273,18 @@ mod mbc1 {
         const MODE_SEL_END_ADDR: usize = 0x7FFF;
 
         pub fn new() -> Mbc1Cart {
-            Mbc1Cart {
+            let mut mapper = Mbc1Cart {
                 mode:BankMode::Mode16KRom,
                 rom_offset:0,
                 ram_offset:0,
                 ram_enabled: false,
                 is_ram_mode: false,
-                low_bank_bits: 0,
+                low_bank_bits: 1,
                 high_bank_bits: 0,
-            }
+            };
+            mapper.update_ram_bank_offset();
+            mapper.update_rom_bank_offset();
+            return mapper;
         }
 
         fn update_rom_bank_offset(&mut self) {
@@ -354,7 +357,10 @@ mod mbc1 {
                 }
                 // Ram region
                 Mbc1Cart::RAM_START_ADDR..=Mbc1Cart::RAM_END_ADDR => {
-                    ram[addr + self.ram_offset - Mbc1Cart::RAM_START_ADDR] = value;
+                    let index = addr + self.ram_offset - Mbc1Cart::RAM_START_ADDR;
+                    if index < ram.len(){
+                        ram[index] = value;
+                    }
                 }
                 // Should not ever happen
                 _ => {
