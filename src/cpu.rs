@@ -5484,7 +5484,7 @@ mod test {
         assert_eq!(cycles, 4);
         assert_eq!(cpu.reg.pc, 2);
         assert_eq!(cpu.reg.sp, 0x1234 - 128);
-        assert_eq!(cpu.reg.f, Regs::HCARRY_FLAG | Regs::CARRY_FLAG);
+        assert_eq!(cpu.reg.f, Regs::HCARRY_FLAG);
 
         load_into_ram(&mut ram, &[0xE8, 0x7F]);
         cpu = Cpu::new();
@@ -5492,7 +5492,7 @@ mod test {
         cpu.execute_instruction(&mut ram);
 
         assert_eq!(cpu.reg.sp, 0x1234 + 127);
-        assert_eq!(cpu.reg.f, 0);
+        assert_eq!(cpu.reg.f, Regs::HCARRY_FLAG);
     }
 
     #[test]
@@ -5654,7 +5654,7 @@ mod test {
         assert_eq!(cycles, 3);
         assert_eq!(cpu.reg.pc, 2);
         assert_eq!(cpu.reg.read16(Register::HL), 0x100 - 128);
-        assert_eq!(cpu.reg.f, Regs::CARRY_FLAG | Regs::HCARRY_FLAG);
+        assert_eq!(cpu.reg.f, Regs::HCARRY_FLAG);
 
         cpu = Cpu::new();
         load_into_ram(&mut ram, &[0xF8, 0x7F]);
