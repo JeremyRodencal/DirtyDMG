@@ -43,8 +43,9 @@ impl TimerUnit {
         // TODO account for stop instruction.
         self.div_inc_counter += cpu_ticks;
         if self.div_inc_counter >= TimerUnit::ticks_per_div {
-            self.div = self.div.wrapping_add(1);
-            self.div_inc_counter -= TimerUnit::ticks_per_div;
+            let ticks = self.div_inc_counter / TimerUnit::ticks_per_div;
+            self.div = self.div.wrapping_add(ticks as u8);
+            self.div_inc_counter %= TimerUnit::ticks_per_div;
         }
 
         if self.enabled{
@@ -52,17 +53,15 @@ impl TimerUnit {
             // TODO account for stop instruction.
             self.tima_inc_counter += cpu_ticks;
             if self.tima_inc_counter >= self.ticks_per_inc {
-                self.tima_inc_counter -= self.ticks_per_inc;
+                let ticks = self.tima_inc_counter / self.ticks_per_inc;
+                self.tima_inc_counter %= self.ticks_per_inc;
 
-                // if tima register will wrap
-                if self.tima == 0xFF {
-                    // Reset to mod, and continue
-                    self.tima = self.tma;
+                // If we are wrapping
+                if ticks + self.tima as u16 >= 256 {
+                    self.tima = self.tima.wrapping_add(ticks as u8) + self.tma;
                     is.request_timer();
-                }
-                // Else increment normally.
-                else {
-                    self.tima += 1;
+                } else {
+                    self.tima += ticks as u8;
                 }
             }
         }
@@ -77,6 +76,7 @@ impl BusRW for TimerUnit {
                 self.div = 0;
             }
             TIMA_REG_ADDR => {
+                println!("TIMA write: {}", value);
                 self.tima = value;
             }
             TMA_REG_ADDR => {
@@ -107,6 +107,7 @@ impl BusRW for TimerUnit {
                 self.div
             }
             TIMA_REG_ADDR => {
+                println!("tima read: {}", self.tima);
                 self.tima
             }
             TMA_REG_ADDR => {
@@ -132,9 +133,58 @@ impl BusRW for TimerUnit {
 
 #[cfg(test)]
 mod test{
+    use super::*;
+    use crate::interrupt::InterruptStatus;
+
+    fn get_test_pack() -> (TimerUnit, InterruptStatus){
+        let mut tu = TimerUnit::new();
+        let mut is = InterruptStatus::new();
+        is.isrmask = 0xFF;
+        (tu, is)
+    }
+
     #[test]
-    #[ignore]
-    fn timer_module_needs_tests() {
-        assert!(false);
+    fn timer_no_tick_until_enabled() {
+        let (mut tu, mut is) = get_test_pack();
+
+        tu.bus_write8(super::TAC_REG_ADDR, 0x03);
+        tu.update(4, &mut is);
+        assert_eq!(tu.tima_inc_counter, 0);
+
+        tu.bus_write8(super::TAC_REG_ADDR, 0x5);
+        tu.update(4, &mut is);
+        assert_eq!(tu.tima_inc_counter, 4);
+    }
+
+    #[test]
+    fn timer_tick_at_correct_freq() {
+        let (mut tu, mut is) = get_test_pack();
+        tu.bus_write8(super::TAC_REG_ADDR, 0b101);
+
+        tu.update(15, &mut is);
+        assert_eq!(tu.tima, 0);
+        tu.update(1, &mut is);
+        assert_eq!(tu.tima, 1);
+    }
+
+    #[test]
+    fn timer_reset_to_tma(){
+        let (mut tu, mut is) = get_test_pack();
+        tu.bus_write8(super::TAC_REG_ADDR, 0b100);
+        let tma = 0x23;
+        tu.bus_write8(super::TMA_REG_ADDR, tma);
+
+        for _ in 0..255{
+            tu.update(1024, &mut is);
+        }
+        assert_eq!(tu.bus_read8(super::TIMA_REG_ADDR), 255);
+
+        // Enough here to tick twice, should wrap tick into tma.
+        tu.update(2049, &mut is);
+        assert_eq!(tu.tima, tma+1);
+
+        // Partial tick of 1023 should cause update due to one extra tick.
+        tu.update(1023, &mut is);
+        assert_eq!(tu.tima, tma+2);
     }
 }
