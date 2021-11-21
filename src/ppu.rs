@@ -454,6 +454,11 @@ impl BusRW for PPU{
                 self.tile_write(value, addr);
             }
 
+            // Tile map write
+            TILEMAP_START_ADDRESS..=TILEMAP_END_ADDRESS => {
+                self.tilemaps[addr-TILEMAP_START_ADDRESS] = value;
+            },
+
             // OAM memory write.
             OAM_START_ADDRESS..=OAM_END_ADDRESS => {
                 self.sprite_write(value, addr);
@@ -800,5 +805,21 @@ mod test {
     #[ignore]
     fn test_dma_memory_lock() {
         panic!("test_dma_memory_lock is not implemented");
+    }
+
+    #[test]
+    fn test_tilemap_read_write() {
+        let mut ppu = PPU::new();
+        let tile_start = 0x9800;
+        let tile_end = 0x9FFF;
+        let start_value = 0xFC;
+        let end_value = 0xFD;
+
+        ppu.bus_write8(tile_start, start_value);
+        ppu.bus_write8(tile_end, end_value);
+        assert_eq!(ppu.bus_read8(tile_start), start_value);
+        assert_eq!(ppu.bus_read8(tile_end), end_value);
+        assert_eq!(ppu.tilemaps[0], start_value);
+        assert_eq!(ppu.tilemaps[2047], end_value);
     }
 }
