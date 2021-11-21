@@ -1,4 +1,5 @@
 use crate::bus::{BusRW};
+use crate::interrupt::InterruptStatus;
 
 /// Overall size of the ram block used for tile sets.
 const TILESET_RAM:usize = 0x1800;
@@ -170,7 +171,7 @@ impl OamSprite {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Debug)]
 enum Mode{
     HBLANK = 0,
     VBLANK = 1,
@@ -229,6 +230,9 @@ pub struct PPU {
     // OAM DMA
     oam_dma_ticks: u8,
     oam_dma_src: u16,
+
+    // Misc State tracking.
+    tick_counter: u16
 }
 
 impl PPU {
@@ -248,6 +252,10 @@ impl PPU {
     const LCDS_MODE0_IS_MASK: u8 =    1<<3;
 
     const OAM_DMA_TRANSFER_TICKS: u8 = 160; // In cpu ticks or "T" cycles.
+    
+    const LCD_TICKS_PER_LINE: u16 = 456;
+    const LCD_LINE_VBLANK_START: u8 = 144;
+    const LCD_LINE_VBLANK_END: u8 = 153;
 
     /// Checks if a DMA transfer is currently executing.
     fn dma_active(&self) -> bool{
@@ -271,9 +279,89 @@ impl PPU {
         }
     }
 
+    fn draw_line(&mut self) {
+        // TODO actually draw a line.
+    }
+
     /// # Executes the specified number of clock ticks.
-    pub fn execute_ticks(&mut self, ticks:u16, bus:&mut impl BusRW){
+    pub fn execute_ticks(&mut self, ticks:u16, bus:&mut impl BusRW, is: &mut InterruptStatus){
         self.update_dma(ticks, bus);
+
+        // TODO this is really, Really, REALLY wildly inacurate.
+        if self.lcd_enabled{
+            self.tick_counter += ticks;
+
+            // If the line has expired
+            if self.tick_counter >= PPU::LCD_TICKS_PER_LINE {
+
+                // correct the tick count and increment the line count.
+                self.tick_counter -= PPU::LCD_TICKS_PER_LINE;
+                self.line_y += 1;
+                self.line_compare = self.line_compare_value == self.line_y;
+                if self.line_compare {
+                    if self.line_compare_is {
+                        is.request_lcdstat();
+                    }
+                }
+
+                // if start of vblank
+                if self.line_y == PPU::LCD_LINE_VBLANK_START {
+                    // Set the mode
+                    self.mode = Mode::VBLANK;
+
+                    // Trigger interrupts
+                    is.request_vblank();
+                    if self.mode1_is {
+                        is.request_lcdstat();
+                    }
+                }
+
+                // start of new frame.
+                if self.line_y > PPU::LCD_LINE_VBLANK_END {
+                    self.line_y = 0;
+                    self.mode = Mode::SPRITE_SEARCH;
+                }
+
+                self.draw_line();
+            }
+
+            // If we are not in vblank
+            if self.line_y < PPU::LCD_LINE_VBLANK_START {
+                
+                let new_mode = match self.tick_counter {
+                    // Mode 2 - OAM_SCAN
+                    0..=79 => {
+                        Mode::SPRITE_SEARCH
+                    }
+                    // Mode 3 - Drawing Pixels
+                    80..=251 => {
+                        Mode::LCD_TRANSFER
+                    }
+                    // Mode 0 - HBLANK
+                    _ => {
+                        Mode::HBLANK
+                    }
+                };
+
+                // If there was a mode change, set any interrupts.
+                if new_mode != self.mode {
+                    self.mode = new_mode;
+                    match new_mode {
+                        Mode::SPRITE_SEARCH => {
+                            if self.mode2_is{
+                                is.request_lcdstat();
+                            }
+                        }
+                        Mode::HBLANK => {
+                            if self.mode0_is {
+                                is.request_lcdstat();
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
     }
 
     pub fn new() -> PPU {
@@ -312,6 +400,7 @@ impl PPU {
             obj_palette2: Palette::new(),
             oam_dma_src: 0,
             oam_dma_ticks: 0,
+            tick_counter: 0,
         }
     }
 
@@ -566,6 +655,22 @@ mod test {
         }
     }
 
+    fn test_pack() -> (PPU, Ram, InterruptStatus){
+        let mut ppu = PPU::new();
+        let is = InterruptStatus::new();
+        let ram = Ram::new(0x10000, 0);
+        (ppu, ram, is)
+    }
+
+    impl PPU{
+        fn run(&mut self, ticks:u16, bus: &mut impl BusRW, is: &mut InterruptStatus) {
+            assert_eq!(ticks % 4, 0, "");
+            for _ in 0..ticks/4 {
+                self.execute_ticks(4, bus, is);
+            }
+        }
+    }
+
     #[test]
     fn test_sprite_write() {
         let ref_sprite = OamSprite{
@@ -764,18 +869,20 @@ mod test {
     #[test]
     fn test_dma_transfer_ticks_down() {
         // Given a PPU with a staged DMA transfer
-        let mut ppu = PPU::new();
-        let mut ram = Ram::new(160, 0);
+        let (mut ppu, mut ram, mut is) = test_pack();
+
+        // let mut ppu = PPU::new();
+        // let mut ram = Ram::new(160, 0);
         ppu.bus_write8(OAM_DMA_REGISTER_ADDRESS, 0);
 
         // When 7 ticks are executed
-        ppu.execute_ticks(7, &mut ram);
+        ppu.execute_ticks(7, &mut ram, &mut is);
 
         // Then the ticks count down by the number of executed ticks
         assert_eq!(ppu.oam_dma_ticks, 153);
 
         // When more ticks are executed than remain on the dma transfer
-        ppu.execute_ticks(154, &mut ram);
+        ppu.execute_ticks(154, &mut ram, &mut is);
 
         // Then the ticks will not underflow.
         assert_eq!(ppu.oam_dma_ticks, 0);
@@ -787,13 +894,14 @@ mod test {
         // Given a PPU with a staged DMA transfer, and some initialized ram
         let mut ppu = PPU::new();
         let mut ram = Ram::new(1024, 0);
+        let mut is = InterruptStatus::new();
         for x in 256..(256+OAM_RAM_SIZE){
             ram.bus_write8(x, x as u8);
         }
         ppu.bus_write8(OAM_DMA_REGISTER_ADDRESS, 1);
 
         // When the ppu executes ticks
-        ppu.execute_ticks(1, &mut ram);
+        ppu.execute_ticks(1, &mut ram, &mut is);
 
         // Then the OAM memory must contain the new data from the transfer source.
         for x in 0..OAM_RAM_SIZE {
@@ -821,5 +929,113 @@ mod test {
         assert_eq!(ppu.bus_read8(tile_end), end_value);
         assert_eq!(ppu.tilemaps[0], start_value);
         assert_eq!(ppu.tilemaps[2047], end_value);
+    }
+
+    #[test]
+    fn test_cycles_through_drawing_modes() {
+        // Currently very flawed. Does not account for different timing within a line.
+        let (mut ppu, mut ram, mut is) = test_pack();
+        ppu.lcd_enabled = true;
+
+        ppu.run(4, &mut ram, &mut is);
+        assert_eq!(ppu.mode, Mode::SPRITE_SEARCH);
+        ppu.run(72, &mut ram, &mut is);
+        assert_eq!(ppu.mode, Mode::SPRITE_SEARCH);
+
+        ppu.run(4, &mut ram, &mut is);
+        assert_eq!(ppu.mode, Mode::LCD_TRANSFER);
+        ppu.run(168, &mut ram, &mut is);
+        assert_eq!(ppu.mode, Mode::LCD_TRANSFER);
+
+        ppu.run(4, &mut ram, &mut is);
+        assert_eq!(ppu.mode, Mode::HBLANK);
+        ppu.run(200, &mut ram, &mut is);
+        assert_eq!(ppu.mode, Mode::HBLANK);
+
+        ppu.run(4, &mut ram, &mut is);
+        assert_eq!(ppu.mode, Mode::SPRITE_SEARCH);
+    }
+
+    #[test]
+    #[ignore]
+    fn test_cycles_more_accurate_modes_for_real(){
+        assert!(false);
+    }
+
+    #[test]
+    fn test_ycomp_stat_interrupt() {
+        let (mut ppu, mut ram, mut is) = test_pack();
+        is.isrmask = 0xFF;
+        ppu.lcd_enabled = true;
+        ppu.line_compare_is = true;
+        ppu.line_compare_value = 1;
+
+        // Line zero, no interrupt.
+        ppu.run(452, &mut ram, &mut is);
+        assert_eq!(ppu.line_y, 0);
+        assert_eq!(is.is_lcdstat_active(), false);
+
+        // Line 1, interrupt on first tick.
+        ppu.run(4, &mut ram, &mut is);
+        assert_eq!(ppu.line_y, 1);
+        assert_eq!(is.is_lcdstat_active(), true);
+
+        // Line 1, No interrupt on subsequent tick.
+        is.clear_lcdstat();
+        ppu.run(4, &mut ram, &mut is);
+        assert_eq!(is.is_lcdstat_active(), false);
+        assert_eq!(ppu.line_y, 1);
+    }
+
+    #[test]
+    fn test_hblank_stat_interrupt() {
+        // This is not accurate, since it does not account for variable line timing.
+        let (mut ppu, mut ram, mut is) = test_pack();
+        is.isrmask = 0xFF;
+        ppu.lcd_enabled = true;
+        ppu.mode0_is = true;
+
+        // No interrupt yet.
+        ppu.run(80 + 172 - 4, &mut ram, &mut is);
+        assert_eq!(is.is_lcdstat_active(), false);
+
+        // Transition in to HBLANK, interrupt asserts
+        ppu.run(4, &mut ram, &mut is);
+        assert_eq!(is.is_lcdstat_active(), true);
+        assert_eq!(ppu.mode, Mode::HBLANK);
+
+        // Continue in HBLANK, interrupt is not asserted anymore.
+        is.clear_lcdstat();
+        ppu.run(4, &mut ram, &mut is);
+        assert_eq!(is.is_lcdstat_active(), false);
+    }
+
+    #[test]
+    fn test_vblank_interrupts() {
+        let (mut ppu, mut ram, mut is) = test_pack();
+
+        is.isrmask = 0xFF;
+        ppu.lcd_enabled = true;
+        ppu.mode1_is = true;
+
+        // Get right to the edge of vblank
+        for _ in 0..143 {
+            ppu.run(456, &mut ram, &mut is);
+        }
+        assert_eq!(ppu.line_y, 143);
+        assert_eq!(is.is_vblank_active(), false);
+        assert_eq!(is.is_lcdstat_active(), false);
+
+        // Draw the line to trigger vblank.
+        ppu.run(456, &mut ram, &mut is);
+        assert_eq!(is.is_vblank_active(), true);
+        assert_eq!(is.is_lcdstat_active(), true);
+
+        // Draw another line. No more interrupts should activate.
+        is.clear_vblank();
+        is.clear_lcdstat();
+        ppu.run(456, &mut ram, &mut is);
+        assert_eq!(is.is_vblank_active(), false);
+        assert_eq!(is.is_lcdstat_active(), false);
     }
 }
