@@ -1,19 +1,9 @@
-mod dmg;
-mod cpu;
-mod bus;
-mod ram;
-mod interrupt;
-mod cartrige;
-mod ppu;
-mod serial;
-mod timer;
-
 use std::env;
 use std::io::{Error, ErrorKind};
 use std::io::Read;
 use std::fs;
 
-use dmg::Dmg;
+use DirtyDMG::dmg::Dmg;
 
 fn load_file(filepath: &str) -> Result<Vec<u8>, std::io::Error>
 {
