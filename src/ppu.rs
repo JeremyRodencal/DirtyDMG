@@ -1038,9 +1038,4 @@ mod test {
         assert_eq!(is.is_vblank_active(), false);
         assert_eq!(is.is_lcdstat_active(), false);
     }
-
-    #[test]
-    fn test_I_fail_What_Does_Github_Do(){
-        assert!(false);
-    }
 }
