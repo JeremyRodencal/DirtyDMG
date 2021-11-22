@@ -214,7 +214,7 @@ struct RawCart { }
 
 impl MapperRW for RawCart {
 
-    fn read(&mut self, rom: &mut [u8], _: &mut [u8], addr:u16) -> u8{
+    fn read(&mut self, _ram: &mut [u8], rom: &mut [u8], addr:u16) -> u8{
         match addr {
             // Return values strait up if they are in the rom area.
             0x0000..=0x7FFF => {
