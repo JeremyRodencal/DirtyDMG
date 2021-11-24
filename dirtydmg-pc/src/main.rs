@@ -3,7 +3,7 @@ use std::io::{Error, ErrorKind};
 use std::io::Read;
 use std::fs;
 
-use DirtyDMG::dmg::Dmg;
+use dirtydmg_core::dmg::Dmg;
 
 fn load_file(filepath: &str) -> Result<Vec<u8>, std::io::Error>
 {
