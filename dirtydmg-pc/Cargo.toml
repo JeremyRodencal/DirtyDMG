@@ -7,3 +7,4 @@ edition = "2018"
 
 [dependencies]
 dirtydmg-core = {path = "../dirtydmg-core"}
+sdl2 = "*"
