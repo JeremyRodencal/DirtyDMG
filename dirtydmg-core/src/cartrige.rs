@@ -1,7 +1,4 @@
 use crate::bus::BusRW;
-use byteorder::{ByteOrder, LittleEndian};
-use std::error::Error;
-use std::io;
 
 trait MapperRW{
     /// Reads a single byte from the mapper.
@@ -134,8 +131,8 @@ impl Cartrige {
 
         let info = CartInfo::from_header(rom_data)?;
 
-        let mut ram: Vec<u8> = vec![0;info.ram_size];
-        let mut rom: Vec<u8> = Vec::from(&rom_data[0..info.rom_size]);
+        let ram: Vec<u8> = vec![0;info.ram_size];
+        let rom: Vec<u8> = Vec::from(&rom_data[0..info.rom_size]);
 
         let mapper:Box<dyn MapperRW> = 
             match info.mapper {
@@ -149,9 +146,9 @@ impl Cartrige {
             };
 
         let cart = Cartrige {
-            mapper: mapper,
-            rom: Vec::new(),
-            ram: Vec::new(),
+            mapper,
+            rom,
+            ram,
         };
 
         return Ok(cart);
@@ -161,8 +158,8 @@ impl Cartrige {
     {
         let info = CartInfo::from_header(rom_data)?;
 
-        let mut ram: Vec<u8> = vec![0;info.ram_size];
-        let mut rom: Vec<u8> = Vec::from(&rom_data[0..info.rom_size]);
+        let ram: Vec<u8> = vec![0;info.ram_size];
+        let rom: Vec<u8> = Vec::from(&rom_data[0..info.rom_size]);
 
         let mapper:Box<dyn MapperRW> = 
             match info.mapper {
@@ -296,7 +293,7 @@ mod mbc1 {
         }
 
         fn update_ram_bank_offset(&mut self) {
-            let mut bank = if self.is_ram_mode {self.high_bank_bits}
+            let bank = if self.is_ram_mode {self.high_bank_bits}
                            else {0};
             self.ram_offset = (bank as usize) * Mbc1Cart::RAM_BANK_SIZE;
         }

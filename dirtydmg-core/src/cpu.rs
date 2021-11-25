@@ -194,7 +194,7 @@ impl Cpu {
     /// If the cpu is halted, the cpu is always returned to the running mode.
     /// 
     /// Returns true if the ISR was started, false if it was not.
-    fn start_isr(&mut self, bus: &mut impl BusRW, is: &mut InterruptStatus, addr: u16) -> bool
+    fn start_isr(&mut self, bus: &mut impl BusRW, addr: u16) -> bool
     {
         let started = self.isr_en;
         if started {
@@ -227,35 +227,35 @@ impl Cpu {
         // Check for interrupts if enabled.
         if is.is_vblank_active()
         {
-            if self.start_isr(bus, is, Cpu::VBLANK_ISR_ADDR){
+            if self.start_isr(bus, Cpu::VBLANK_ISR_ADDR){
                 started = true;
                 is.clear_vblank();
             }
         }
         else if is.is_lcdstat_active()
         {
-            if self.start_isr(bus, is, Cpu::LCD_ISR_ADDR){
+            if self.start_isr(bus, Cpu::LCD_ISR_ADDR){
                 started = true;
                 is.clear_lcdstat();
             }
         }
         else if is.is_timer_active()
         {
-            if self.start_isr(bus, is, Cpu::TIMER_ISR_ADDR){
+            if self.start_isr(bus, Cpu::TIMER_ISR_ADDR){
                 started = true;
                 is.clear_timer();
             }
         }
         else if is.is_serial_active()
         {
-            if self.start_isr(bus, is, Cpu::SERIAL_ISR_ADDR){
+            if self.start_isr(bus, Cpu::SERIAL_ISR_ADDR){
                 started = true;
                 is.clear_serial();
             }
         }
         else if is.is_joypad_active()
         {
-            if self.start_isr(bus, is, Cpu::JOYPAD_ISR_ADDR){
+            if self.start_isr(bus, Cpu::JOYPAD_ISR_ADDR){
                 started = true;
                 is.clear_joypad();
             }

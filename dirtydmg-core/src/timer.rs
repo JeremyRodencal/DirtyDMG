@@ -23,7 +23,7 @@ pub struct TimerUnit {
 }
 
 impl TimerUnit {
-    const ticks_per_div:u16 = 256;
+    const TICKS_PER_DIV:u16 = 256;
 
     pub fn new() -> TimerUnit {
         TimerUnit {
@@ -42,10 +42,10 @@ impl TimerUnit {
         // Update div counter 
         // TODO account for stop instruction.
         self.div_inc_counter += cpu_ticks;
-        if self.div_inc_counter >= TimerUnit::ticks_per_div {
-            let ticks = self.div_inc_counter / TimerUnit::ticks_per_div;
+        if self.div_inc_counter >= TimerUnit::TICKS_PER_DIV {
+            let ticks = self.div_inc_counter / TimerUnit::TICKS_PER_DIV;
             self.div = self.div.wrapping_add(ticks as u8);
-            self.div_inc_counter %= TimerUnit::ticks_per_div;
+            self.div_inc_counter %= TimerUnit::TICKS_PER_DIV;
         }
 
         if self.enabled{

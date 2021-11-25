@@ -124,7 +124,7 @@ impl Palette {
     fn update(&mut self, mut raw:u8){
         // Update the raw value
         self.raw = raw;
-        for i in (0..4){
+        for i in 0..4{
             self.table[i] = raw & 0b11;
             raw >>= 2;
         }
@@ -173,10 +173,10 @@ impl OamSprite {
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 enum Mode{
-    HBLANK = 0,
-    VBLANK = 1,
-    SPRITE_SEARCH = 2,
-    LCD_TRANSFER = 3
+    HBlank = 0,
+    VBlank = 1,
+    SpriteSearch = 2,
+    LcdTransfer = 3
 }
 
 pub struct PPU {
@@ -307,7 +307,7 @@ impl PPU {
                 // if start of vblank
                 if self.line_y == PPU::LCD_LINE_VBLANK_START {
                     // Set the mode
-                    self.mode = Mode::VBLANK;
+                    self.mode = Mode::VBlank;
 
                     // Trigger interrupts
                     is.request_vblank();
@@ -319,7 +319,7 @@ impl PPU {
                 // start of new frame.
                 if self.line_y > PPU::LCD_LINE_VBLANK_END {
                     self.line_y = 0;
-                    self.mode = Mode::SPRITE_SEARCH;
+                    self.mode = Mode::SpriteSearch;
                 }
 
                 self.draw_line();
@@ -331,15 +331,15 @@ impl PPU {
                 let new_mode = match self.tick_counter {
                     // Mode 2 - OAM_SCAN
                     0..=79 => {
-                        Mode::SPRITE_SEARCH
+                        Mode::SpriteSearch
                     }
                     // Mode 3 - Drawing Pixels
                     80..=251 => {
-                        Mode::LCD_TRANSFER
+                        Mode::LcdTransfer
                     }
                     // Mode 0 - HBLANK
                     _ => {
-                        Mode::HBLANK
+                        Mode::HBlank
                     }
                 };
 
@@ -347,12 +347,12 @@ impl PPU {
                 if new_mode != self.mode {
                     self.mode = new_mode;
                     match new_mode {
-                        Mode::SPRITE_SEARCH => {
+                        Mode::SpriteSearch => {
                             if self.mode2_is{
                                 is.request_lcdstat();
                             }
                         }
-                        Mode::HBLANK => {
+                        Mode::HBlank => {
                             if self.mode0_is {
                                 is.request_lcdstat();
                             }
@@ -394,7 +394,7 @@ impl PPU {
             mode1_is: false,
             mode0_is: false, 
             line_compare: false,
-            mode: Mode::HBLANK,
+            mode: Mode::HBlank,
             bg_palette: Palette::new(),
             obj_palette1: Palette::new(),
             obj_palette2: Palette::new(),
@@ -453,23 +453,28 @@ impl PPU {
         self.mode2_is = data & PPU::LCDS_MODE2_IS_MASK != 0;
         self.mode1_is = data & PPU::LCDS_MODE1_IS_MASK != 0;
         self.mode0_is = data & PPU::LCDS_MODE0_IS_MASK != 0;
-    }
-
+        self.lcds = data & (
+            PPU::LCDS_LINE_CMP_IS_MASK |
+            PPU::LCDS_MODE2_IS_MASK | 
+            PPU::LCDS_MODE1_IS_MASK |
+            PPU::LCDS_MODE0_IS_MASK)
+}
     fn lcds_read(&mut self) -> u8 {
         // Reassemble the LCDS value one bit at a time, starting with the msb.
-        let mut value = 0;
-        value |= self.line_compare_is as u8;
-        value <<= 1;
-        value |= self.mode2_is as u8;
-        value <<= 1;
-        value |= self.mode1_is as u8;
-        value <<= 1;
-        value |= self.mode0_is as u8;
-        value <<= 1;
-        value |= self.line_compare as u8;
-        value <<= 2;
-        value |= self.mode as u8;
-        value
+        // let mut value = 0;
+        // value |= self.line_compare_is as u8;
+        // value <<= 1;
+        // value |= self.mode2_is as u8;
+        // value <<= 1;
+        // value |= self.mode1_is as u8;
+        // value <<= 1;
+        // value |= self.mode0_is as u8;
+        // value <<= 1;
+        // value |= self.line_compare as u8;
+        // value <<= 2;
+        // value |= self.mode as u8;
+        // value
+        self.lcds
     }
 
     /// # Stage a DMA transfer
@@ -938,22 +943,22 @@ mod test {
         ppu.lcd_enabled = true;
 
         ppu.run(4, &mut ram, &mut is);
-        assert_eq!(ppu.mode, Mode::SPRITE_SEARCH);
+        assert_eq!(ppu.mode, Mode::SpriteSearch);
         ppu.run(72, &mut ram, &mut is);
-        assert_eq!(ppu.mode, Mode::SPRITE_SEARCH);
+        assert_eq!(ppu.mode, Mode::SpriteSearch);
 
         ppu.run(4, &mut ram, &mut is);
-        assert_eq!(ppu.mode, Mode::LCD_TRANSFER);
+        assert_eq!(ppu.mode, Mode::LcdTransfer);
         ppu.run(168, &mut ram, &mut is);
-        assert_eq!(ppu.mode, Mode::LCD_TRANSFER);
+        assert_eq!(ppu.mode, Mode::LcdTransfer);
 
         ppu.run(4, &mut ram, &mut is);
-        assert_eq!(ppu.mode, Mode::HBLANK);
+        assert_eq!(ppu.mode, Mode::HBlank);
         ppu.run(200, &mut ram, &mut is);
-        assert_eq!(ppu.mode, Mode::HBLANK);
+        assert_eq!(ppu.mode, Mode::HBlank);
 
         ppu.run(4, &mut ram, &mut is);
-        assert_eq!(ppu.mode, Mode::SPRITE_SEARCH);
+        assert_eq!(ppu.mode, Mode::SpriteSearch);
     }
 
     #[test]
@@ -1002,7 +1007,7 @@ mod test {
         // Transition in to HBLANK, interrupt asserts
         ppu.run(4, &mut ram, &mut is);
         assert_eq!(is.is_lcdstat_active(), true);
-        assert_eq!(ppu.mode, Mode::HBLANK);
+        assert_eq!(ppu.mode, Mode::HBlank);
 
         // Continue in HBLANK, interrupt is not asserted anymore.
         is.clear_lcdstat();

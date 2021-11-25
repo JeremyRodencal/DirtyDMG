@@ -1,5 +1,4 @@
-use std::env;
-use std::io::{Error, ErrorKind};
+use std::io::{ErrorKind};
 use std::io::Read;
 use std::fs;
 
