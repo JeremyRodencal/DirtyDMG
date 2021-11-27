@@ -1,7 +1,7 @@
 use std::io::{ErrorKind};
 use std::io::Read;
 use std::fs;
-use std::time::{Duration, Instant};
+use std::time::{Instant};
 
 extern crate sdl2;
 
@@ -13,7 +13,6 @@ use sdl2::keyboard::Keycode;
 
 
 use dirtydmg_core::dmg::Dmg;
-use dirtydmg_core::ppu::PPU;
 use dirtydmg_core::interface::ScanlineBuffer;
 
 fn load_file(filepath: &str) -> Result<Vec<u8>, std::io::Error>
@@ -49,7 +48,7 @@ fn draw_line<T>(canvas: &mut Canvas<T>, y: u8, buffer: &ScanlineBuffer)
     for pixelpack in buffer.pixeldata{
         for sub_pixel in 0..4{
             canvas.set_draw_color(colors[((pixelpack >> (2 * sub_pixel))&0b11) as usize]);
-            canvas.draw_point(Point::new(x, y as i32));
+            canvas.draw_point(Point::new(x, y as i32)).unwrap();
             x += 1
         }
     }

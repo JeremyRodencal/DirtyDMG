@@ -802,7 +802,7 @@ mod test {
         assert_eq!(ppu.lcd_enabled, true);
         assert_eq!(ppu.window_tiles_high, false);
         assert_eq!(ppu.window_enabled, true);
-        assert_eq!(ppu.bg_window_signed_addressing, false);
+        assert_eq!(ppu.bg_window_signed_addressing, true); // inverted.
         assert_eq!(ppu.bg_tiles_high, true);
         assert_eq!(ppu.obj_double_sprites, false);
         assert_eq!(ppu.obj_enabled, true);
