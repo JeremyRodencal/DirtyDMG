@@ -19,7 +19,7 @@ pub struct Dmg{
     bus: Bus,
     isr: Rc<RefCell<InterruptStatus>>,
     cart: Rc<RefCell<Cartrige>>,
-    ppu: Rc<RefCell<PPU>>,
+    pub ppu: Rc<RefCell<PPU>>,
     stu: Rc<RefCell<SerialUnit>>,
     tu: Rc<RefCell<TimerUnit>>,
 }

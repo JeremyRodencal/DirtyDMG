@@ -11,3 +11,4 @@ pub mod ram;
 #[allow(dead_code)]
 pub mod serial;
 pub mod timer;
+pub mod interface;

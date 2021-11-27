@@ -219,7 +219,7 @@ pub struct PPU {
     // scroll registers
     scroll_y: u8,
     scroll_x: u8,
-    line_y: u8,
+    pub line_y: u8,
     line_compare_value: u8,
     window_y: u8,
     window_x: u8,
