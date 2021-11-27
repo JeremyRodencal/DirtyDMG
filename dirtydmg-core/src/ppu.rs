@@ -1,10 +1,13 @@
 use crate::bus::{BusRW};
 use crate::interrupt::InterruptStatus;
+use crate::interface::ScanlineBuffer;
 
 /// Overall size of the ram block used for tile sets.
 const TILESET_RAM:usize = 0x1800;
 /// The total number of tiles in the tile sets.
 const TILESET_COUNT:usize = 0x180;
+// The base tile index to use for "high" addressing mode.
+const TILESET_HIGH_BASE_INDEX:isize = 0x100;
 /// The starting RAM address of the tile sets.
 const TILESET_START_ADDRESS:usize = 0x8000;
 /// The ending RAM address of the tile sets.
@@ -59,7 +62,6 @@ const OAM_DMA_REGISTER_ADDRESS:usize = 0xFF46;
 const BG_PALETTE_ADDRESS:usize = 0xFF47;
 const OBJ_PALETTE1_ADDRESS:usize = 0xFF48;
 const OBJ_PALETTE2_ADDRESS:usize = 0xFF49;
-
 
 #[derive(Clone, Copy)]
 /// Structure to hold tile pixel data in an easily accessable format.
@@ -232,7 +234,9 @@ pub struct PPU {
     oam_dma_src: u16,
 
     // Misc State tracking.
-    tick_counter: u16
+    tick_counter: u16,
+    pub line_buffer: ScanlineBuffer,
+    pub line_pending: bool
 }
 
 impl PPU {
@@ -256,6 +260,7 @@ impl PPU {
     const LCD_TICKS_PER_LINE: u16 = 456;
     const LCD_LINE_VBLANK_START: u8 = 144;
     const LCD_LINE_VBLANK_END: u8 = 153;
+    const LCD_WIDTH: u8 = 160;
 
     /// Checks if a DMA transfer is currently executing.
     fn dma_active(&self) -> bool{
@@ -279,8 +284,76 @@ impl PPU {
         }
     }
 
+    /// Computes the correct tileset index for a given map value.
+    fn calc_tileset_index(&self, tiledata: u8) -> usize{
+        if self.bg_window_signed_addressing {
+            let val = (TILESET_HIGH_BASE_INDEX + (tiledata as i8 as isize)) as usize;
+            // println!("tileindex {}", val);
+            val
+        } else {
+            tiledata as usize
+        }
+    }
+
     fn draw_line(&mut self) {
-        // TODO actually draw a line.
+        // TODO this only draws the background right now.
+
+        if self.bg_window_enable{
+            // Find the row of tiles the current line falls on.
+            let tile_row = (((self.line_y as u16 + self.scroll_y as u16) as u8) / 8) as usize;
+            let tile_pixel_y = ((self.line_y as u16 + self.scroll_y as u16) % 8) as u8;
+            // Find the column of tiles the current line starts on.
+            let tile_col = (self.scroll_x / 8) as usize;
+            // The pixel within the tile.
+            let mut tile_pixel_x = self.scroll_x % 8;
+            // Find the tile index.
+            let mut tile_index = tile_row * TILEMAP_DIMENSION + tile_col;
+
+            // Use upper tile map if dictated by current configuration.
+            if self.bg_tiles_high {
+                tile_index += TILEMAP_ITEM_COUNT;
+            }
+
+            // Used to hold pixel data.
+            let mut pixel_block:u8 = 0;
+
+            // For each pixel in the scanline
+            for scanline_index in 0..PPU::LCD_WIDTH {
+                // get the tileset index from the map
+                let tileset_index = self.calc_tileset_index(self.tilemaps[tile_index]);
+
+               // Then get the tile and pixel data and feed it through a palette transformation,
+               // and stuff it into the current pixel block... kind of ugly.
+                pixel_block >>= 2;
+                pixel_block |= 
+                    self.bg_palette.table[
+                        self.tiles[tileset_index]
+                            .read_pixel(tile_pixel_x, tile_pixel_y) as usize
+                    ] << 6;
+
+                // If we have completed a pixel block
+                if scanline_index + 1 & 0b11 == 0{
+                    // update the scanline buffer.
+                    self.line_buffer.pixeldata[(scanline_index/4) as usize] = pixel_block;
+                    // println!("pixelblock @ {:2},{:2} = {:#2X}", scanline_index/4, self.line_y, pixel_block);
+                }
+
+                // If we have a tile pixel overflow
+                tile_pixel_x += 1;
+                if tile_pixel_x & 0b111 == 0 {
+                    // Reset tile pixel to zero
+                    tile_pixel_x = 0;
+
+                    // Advance to the next tile, and check for overflow
+                    tile_index += 1;
+                    if tile_index & 0b11111 == 0 {
+                        // println!("tile_index {}", tile_index); // DEBUG!
+                        tile_index -= TILEMAP_DIMENSION;
+                    }
+                }
+            }
+        }
+        self.line_pending = true;
     }
 
     /// # Executes the specified number of clock ticks.
@@ -293,6 +366,11 @@ impl PPU {
 
             // If the line has expired
             if self.tick_counter >= PPU::LCD_TICKS_PER_LINE {
+
+                // Draw the line if this is not VBLANK
+                if self.line_y < PPU::LCD_LINE_VBLANK_START{
+                    self.draw_line();
+                }
 
                 // correct the tick count and increment the line count.
                 self.tick_counter -= PPU::LCD_TICKS_PER_LINE;
@@ -321,8 +399,6 @@ impl PPU {
                     self.line_y = 0;
                     self.mode = Mode::SpriteSearch;
                 }
-
-                self.draw_line();
             }
 
             // If we are not in vblank
@@ -401,6 +477,8 @@ impl PPU {
             oam_dma_src: 0,
             oam_dma_ticks: 0,
             tick_counter: 0,
+            line_buffer: ScanlineBuffer::new(),
+            line_pending: false,
         }
     }
 
@@ -414,6 +492,8 @@ impl PPU {
         self.tile_data[addr - TILESET_START_ADDRESS] = data;
         // Update the tile data.
         self.tiles[index].update_row(data, y, msb);
+
+        // println!("tilewrite to {:#4X}: {:#2X}", addr, data);
     }
 
     fn sprite_write(&mut self, data:u8, addr:usize) {
@@ -440,11 +520,20 @@ impl PPU {
         self.lcd_enabled = data & PPU::LCDC_ENABLE_MASK != 0;
         self.window_tiles_high = data & PPU::LCDC_WINDOW_TILE_MAP_MASK != 0;
         self.window_enabled = data & PPU::LCDC_WINDOW_DISPLAY_ENABLE_MASK != 0;
-        self.bg_window_signed_addressing = data & PPU::LCDC_BG_WINDOW_TILE_MAP_SELECT_MASK != 0;
+        self.bg_window_signed_addressing = data & PPU::LCDC_BG_WINDOW_TILE_MAP_SELECT_MASK == 0;
         self.bg_tiles_high = data & PPU::LCDC_BG_TILE_MAP_SELECT_MASK != 0;
         self.obj_double_sprites = data & PPU::LCDC_OBJ_SIZE_MASK != 0;
         self.obj_enabled = data & PPU::LCDC_OBJ_DISPLAY_ENABLE_MASK != 0;
         self.bg_window_enable = data & PPU::LCDC_BG_WINDOW_PRIORITY_MASK != 0;
+
+        // println!("lcd_enabled {}", self.lcd_enabled);
+        // println!("window_tiles_high {}", self.window_tiles_high);
+        // println!("window_enabled {}", self.window_enabled);
+        // println!("bg_window_signed_addressing {}", self.bg_window_signed_addressing);
+        // println!("bg_tiles_high {}", self.bg_tiles_high);
+        // println!("obj_double_sprites {}", self.obj_double_sprites);
+        // println!("obj_enabled {}", self.obj_enabled);
+        // println!("bg_window_enable {}", self.bg_window_enable);
     }
 
     fn lcds_write(&mut self, data:u8) {
@@ -1042,5 +1131,141 @@ mod test {
         ppu.run(456, &mut ram, &mut is);
         assert_eq!(is.is_vblank_active(), false);
         assert_eq!(is.is_lcdstat_active(), false);
+    }
+
+    #[test]
+    fn test_basic_background_render(){
+        let (mut ppu, mut ram, mut is) = test_pack();
+        let tile_data = [0x7C, 0x7C, 0x00, 0xC6, 0xC6, 0x00, 0x00, 0xFE, 0xC6, 0xC6, 0x00, 0xC6, 0xC6, 0x00, 0x00, 0x00];
+        // What the given tile looks like
+        // let expected_tile = Tile{
+        //     pixel: [
+        //         [0, 3, 3, 3, 3, 3, 0, 0],
+        //         [2, 2, 0, 0, 0, 2, 2, 0],
+        //         [1, 1, 0, 0, 0, 1, 1, 0],
+        //         [2, 2, 2, 2, 2, 2, 2, 0],
+        //         [3, 3, 0, 0, 0, 3, 3, 0],
+        //         [2, 2, 0, 0, 0, 2, 2, 0],
+        //         [1, 1, 0, 0, 0, 1, 1, 0],
+        //         [0, 0, 0, 0, 0, 0, 0, 0],
+        //     ]
+        // };
+        ppu.bg_window_enable = true;
+        ppu.lcd_enabled = true;
+
+        // write the pallet data. Should invert colors
+        ppu.bus_write8(BG_PALETTE_ADDRESS, 0b0001_1011);
+
+        // Copy in the tile data into the first tile.
+        for (i, x) in tile_data.iter().enumerate() {
+            ppu.bus_write8(TILESET_START_ADDRESS + i, *x);
+        }
+
+        // Render a line.
+        ppu.run(460, &mut ram, &mut is);
+
+        assert_eq!(ppu.line_pending, true);
+        assert_eq!(ppu.line_buffer.pixeldata[0], 0b00_00_00_11);
+        assert_eq!(ppu.line_buffer.pixeldata[1], 0b11_11_00_00);
+    }
+
+    #[test]
+    fn test_basic_background_scroll_render(){
+        let (mut ppu, mut ram, mut is) = test_pack();
+        let tile_data = [0x7C, 0x7C, 0x00, 0xC6, 0xC6, 0x00, 0x00, 0xFE, 0xC6, 0xC6, 0x00, 0xC6, 0xC6, 0x00, 0x00, 0x00];
+        // What the given tile looks like
+        // let expected_tile = Tile{
+        //     pixel: [
+        //         0, 3, 3, 3,   3, 3, 0, 0,
+        //         2, 2, 0, 0,   0, 2, 2, 0,
+        //         1, 1, 0, 0,   0, 1, 1, 0,
+        //         2, 2, 2, 2,   2, 2, 2, 0,
+        //         3, 3, 0, 0,   0, 3, 3, 0,
+        //         2, 2, 0, 0,   0, 2, 2, 0,
+        //         1, 1, 0, 0,   0, 1, 1, 0,
+        //         0, 0, 0, 0,   0, 0, 0, 0,
+        //     ]
+        // };
+        ppu.bg_window_enable = true;
+        ppu.lcd_enabled = true;
+        
+        // write the pallet data. Should invert colors
+        ppu.bus_write8(BG_PALETTE_ADDRESS, 0b1110_0100);
+
+        // Scroll 1 pixel down and 4 pixels right
+        ppu.bus_write8(SCY_ADDRESS, 1);
+        ppu.bus_write8(SCX_ADDRESS, 4);
+
+        // Copy in the tile data into the first tile.
+        for (i, x) in tile_data.iter().enumerate() {
+            ppu.bus_write8(TILESET_START_ADDRESS + i, *x);
+        }
+
+        // Render a line.
+        ppu.run(460, &mut ram, &mut is);
+
+        assert_eq!(ppu.line_pending, true);
+        //         0, 2, 2, 0,   2, 2, 0, 0,   
+        // println!("Pixel 0 to 3: {:#2X}", ppu.line_buffer.pixeldata[0]);
+        // println!("Pixel 4 to 7: {:#2X}", ppu.line_buffer.pixeldata[1]);
+        assert_eq!(ppu.line_buffer.pixeldata[0], 0b00_10_10_00);
+        assert_eq!(ppu.line_buffer.pixeldata[1], 0b00_00_10_10);
+    }
+
+    #[test]
+    fn test_background_signed_addressing(){
+        let (mut ppu, mut ram, mut is) = test_pack();
+        let tile_data = [0x7C, 0x7C, 0x00, 0xC6, 0xC6, 0x00, 0x00, 0xFE, 0xC6, 0xC6, 0x00, 0xC6, 0xC6, 0x00, 0x00, 0x00];
+        // What the given tile looks like
+        // let expected_tile = Tile{
+        //     pixel: [
+        //         0, 3, 3, 3,   3, 3, 0, 0,
+        //         2, 2, 0, 0,   0, 2, 2, 0,
+        //         1, 1, 0, 0,   0, 1, 1, 0,
+        //         2, 2, 2, 2,   2, 2, 2, 0,
+        //         3, 3, 0, 0,   0, 3, 3, 0,
+        //         2, 2, 0, 0,   0, 2, 2, 0,
+        //         1, 1, 0, 0,   0, 1, 1, 0,
+        //         0, 0, 0, 0,   0, 0, 0, 0,
+        //     ]
+        // };
+        ppu.bg_window_enable = true;
+        ppu.lcd_enabled = true;
+        ppu.bg_window_signed_addressing = true;
+        
+        // Set BG pallet.
+        ppu.bus_write8(BG_PALETTE_ADDRESS, 0b1110_0100);
+
+        // Copy in the tile data into the tile just under 0x8800
+        for (i, x) in tile_data.iter().enumerate() {
+            ppu.bus_write8(TILESET_START_ADDRESS + (TILE_SIZE * (256 + 99)) + i, *x);
+        }
+
+        // Set the tile map to use the correct tile
+        for x in 0..TILEMAP_ITEM_COUNT {
+            ppu.bus_write8(TILEMAP_A_START_ADDRESS + x, 99);
+        }
+
+        // Render a line.
+        for _ in 0..154 {
+            ppu.run(456, &mut ram, &mut is);
+        }
+        ppu.line_pending = false;
+        for _ in 0..128 { 
+            ppu.run(456, &mut ram, &mut is);
+        }
+        ppu.run(456, &mut ram, &mut is);
+        ppu.run(456, &mut ram, &mut is);
+        ppu.run(456, &mut ram, &mut is);
+
+        assert_eq!(ppu.line_pending, true);
+        assert_eq!(ppu.line_y, 131);
+        //         0, 3, 3, 3,   3, 3, 0, 0,
+        // println!("Pixel 0 to 3: {:#2X}", ppu.line_buffer.pixeldata[0]);
+        // println!("Pixel 4 to 7: {:#2X}", ppu.line_buffer.pixeldata[1]);
+        assert_eq!(ppu.line_buffer.pixeldata[0], 0x05);
+        assert_eq!(ppu.line_buffer.pixeldata[1], 0x14);
+        assert_eq!(ppu.line_buffer.pixeldata[2], 0x05);
+        assert_eq!(ppu.line_buffer.pixeldata[3], 0x14);
     }
 }
