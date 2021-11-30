@@ -12,3 +12,4 @@ pub mod ram;
 pub mod serial;
 pub mod timer;
 pub mod interface;
+pub mod input;

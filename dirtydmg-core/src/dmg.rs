@@ -8,6 +8,7 @@ use crate::cartrige::{Cartrige};
 use crate::ppu::{PPU};
 use crate::serial::{SerialUnit};
 use crate::timer::TimerUnit;
+use crate::input::{Gamepad, Button};
 
 //DEBUG! should not stay!
 use std::io::stdout;
@@ -22,6 +23,7 @@ pub struct Dmg{
     pub ppu: Rc<RefCell<PPU>>,
     stu: Rc<RefCell<SerialUnit>>,
     tu: Rc<RefCell<TimerUnit>>,
+    gamepad: Rc<RefCell<Gamepad>>
 }
 
 impl Dmg {
@@ -35,6 +37,7 @@ impl Dmg {
         let ppu = Rc::new(RefCell::new(PPU::new()));
         let stu = Rc::new(RefCell::new(SerialUnit::new()));
         let tu = Rc::new(RefCell::new(TimerUnit::new()));
+        let gamepad =  Rc::new(RefCell::new(Gamepad::new()));
 
 
         // Map components to the bus.
@@ -43,6 +46,7 @@ impl Dmg {
         bus.add_item(BusItem::new(0x8000, 0x9FFF, ppu.clone()));
         bus.add_item(BusItem::new(0xA000, 0xBFFF, cart.clone()));
         bus.add_item(BusItem::new(0xC000, 0xDFFF, ram.clone()));
+        bus.add_item(BusItem::new(0xFF00, 0xFF00, gamepad.clone()));
         bus.add_item(BusItem::new(0xFF01, 0xFF02, stu.clone()));
         bus.add_item(BusItem::new(0xFF04, 0xFF07, tu.clone()));
         bus.add_item(BusItem::new(0xFF0F, 0xFF0F, isr.clone()));
@@ -63,7 +67,8 @@ impl Dmg {
             cart,
             ppu,
             stu,
-            tu
+            tu,
+            gamepad,
         }
     }
 
@@ -93,5 +98,14 @@ impl Dmg {
         self.tu.as_ref().borrow_mut().update(
             cycles as u16 * 4, 
             &mut self.isr.as_ref().borrow_mut());
+    }
+
+    pub fn input(&mut self, btn:Button, pressed:bool) {
+        if pressed {
+            self.isr.as_ref().borrow_mut().request_joypad();
+            self.gamepad.as_ref().borrow_mut().press_btn(btn);
+        } else {
+            self.gamepad.as_ref().borrow_mut().release_btn(btn);
+        }
     }
 }

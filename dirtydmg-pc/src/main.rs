@@ -11,8 +11,8 @@ use sdl2::event::Event;
 use sdl2::rect::Point;
 use sdl2::keyboard::Keycode;
 
-
 use dirtydmg_core::dmg::Dmg;
+use dirtydmg_core::input::Button;
 use dirtydmg_core::interface::ScanlineBuffer;
 
 fn load_file(filepath: &str) -> Result<Vec<u8>, std::io::Error>
@@ -51,6 +51,23 @@ fn draw_line<T>(canvas: &mut Canvas<T>, y: u8, buffer: &ScanlineBuffer)
             canvas.draw_point(Point::new(x, y as i32)).unwrap();
             x += 1
         }
+    }
+}
+
+fn terrible_input_proc(dmg: &mut Dmg, key:Keycode, pressed:bool){
+    let btn = match key {
+        Keycode::Z => {Some(Button::B)}
+        Keycode::X => {Some(Button::A)}
+        Keycode::Return | Keycode::Return2 => {Some(Button::Start)}
+        Keycode::C => {Some(Button::Select)}
+        Keycode::Up => {Some(Button::Up)}
+        Keycode::Down => {Some(Button::Down)}
+        Keycode::Left => {Some(Button::Left)}
+        Keycode::Right => {Some(Button::Right)}
+        _ => None
+    };
+    if let Some(b) = btn {
+        dmg.input(b, pressed);
     }
 }
 
@@ -93,6 +110,7 @@ fn main() {
 
     let mut framecount = 0;
     let mut timer = Instant::now();
+    let mut quit = false;
     loop {
         dmg.update();
 
@@ -108,16 +126,27 @@ fn main() {
                     println!("100 frames in {} seconds for {} fps", timer.elapsed().as_secs_f32(), 100f64/timer.elapsed().as_secs_f64());
                     timer = Instant::now();
                     framecount = 0;
+
+                }
+                for event in event_pump.poll_iter() {
+                    match event {
+                        Event::Quit {..} |
+                        Event::KeyDown { keycode: Some(Keycode::Escape), .. } => { 
+                            quit = true;
+                        },
+                        Event::KeyUp   { keycode: Some(key), .. } => { 
+                            terrible_input_proc(&mut dmg, key, false);
+                        },
+                        Event::KeyDown   { keycode: Some(key), .. } => { 
+                            terrible_input_proc(&mut dmg, key, true);
+                        },
+                        _ => {}
+                    }
                 }
             }
         }
-
-        for event in event_pump.poll_iter() {
-            match event {
-                Event::Quit {..} |
-                Event::KeyDown { keycode: Some(Keycode::Escape), .. } => { },
-                _ => {}
-            }
+        if quit{
+            return;
         }
     }
 }
