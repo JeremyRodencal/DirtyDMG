@@ -295,62 +295,193 @@ impl PPU {
         }
     }
 
-    fn draw_line(&mut self) {
-        // TODO this only draws the background right now.
+    /// Populates an array with sprite indicies that overlap the current line.
+    /// Returns the number of sprites found.
+    fn get_line_sprites(&self, sprites:&mut[u8;10]) -> usize{
+        let mut found = 0;
+        let height = if self.obj_double_sprites {TILE_DIMENSION*2} 
+                     else {TILE_DIMENSION}
+                     as i16;
 
-        if self.bg_window_enable{
-            // Find the row of tiles the current line falls on.
-            let tile_row = (((self.line_y as u16 + self.scroll_y as u16) as u8) / 8) as usize;
-            let tile_pixel_y = ((self.line_y as u16 + self.scroll_y as u16) % 8) as u8;
-            // Find the column of tiles the current line starts on.
-            let tile_col = (self.scroll_x / 8) as usize;
-            // The pixel within the tile.
-            let mut tile_pixel_x = self.scroll_x % 8;
-            // Find the tile index.
-            let mut tile_index = tile_row * TILEMAP_DIMENSION + tile_col;
-
-            // Use upper tile map if dictated by current configuration.
-            if self.bg_tiles_high {
-                tile_index += TILEMAP_ITEM_COUNT;
+        for (index, sprite) in self.sprites.iter().enumerate(){
+            // Check for a Y collision.
+            let diff = self.line_y as i16 - (sprite.ypos as i16 - 16);
+            if diff >= 0 && diff < height{
+                sprites[found] = index as u8;
+                found += 1;
             }
 
-            // Used to hold pixel data.
-            let mut pixel_block:u8 = 0;
+            // Abort if we have found our limit of sprites
+            if found >= 10{
+                break;
+            }
+            
+        }
+        // indicate how many items were found.
+        found
+    }
 
-            // For each pixel in the scanline
-            for scanline_index in 0..PPU::LCD_WIDTH {
-                // get the tileset index from the map
-                let tileset_index = self.calc_tileset_index(self.tilemaps[tile_index]);
+    fn check_collision_sprite(&self, xpos:u8, sprite: &OamSprite) -> bool{
+        if xpos >= 168{
+            return false;
+        }
 
-               // Then get the tile and pixel data and feed it through a palette transformation,
-               // and stuff it into the current pixel block... kind of ugly.
-                pixel_block >>= 2;
-                pixel_block |= 
-                    self.bg_palette.table[
-                        self.tiles[tileset_index]
-                            .read_pixel(tile_pixel_x, tile_pixel_y) as usize
-                    ] << 6;
+        if sprite.xpos > xpos && sprite.xpos <= (xpos + TILE_DIMENSION as u8){
+            return true;
+        }
 
-                // If we have completed a pixel block
-                if scanline_index + 1 & 0b11 == 0{
-                    // update the scanline buffer.
-                    self.line_buffer.pixeldata[(scanline_index/4) as usize] = pixel_block;
-                    // println!("pixelblock @ {:2},{:2} = {:#2X}", scanline_index/4, self.line_y, pixel_block);
+        false 
+    }
+
+    fn draw_line(&mut self) {
+        // Used to hold pixel data.
+        let mut pixel_block:u8 = 0;
+        let mut sprite_pixel = 0u8;
+        let mut bg_pixel = 0u8;
+        let mut sprite_behind = true;
+        let mut bg_trans = false;
+
+        ////BG rendering data////
+        // Find the row of tiles the current line falls on.
+        let tile_row = (((self.line_y as u16 + self.scroll_y as u16) as u8) / 8) as usize;
+        let tile_pixel_y = ((self.line_y as u16 + self.scroll_y as u16) % 8) as u8;
+        // Find the column of tiles the current line starts on.
+        let tile_col = (self.scroll_x / 8) as usize;
+        // The pixel within the tile.
+        let mut tile_pixel_x = self.scroll_x % 8;
+        // Find the tile index.
+        let mut tile_index = tile_row * TILEMAP_DIMENSION + tile_col;
+        // Use upper tile map if dictated by current configuration.
+        if self.bg_tiles_high {
+            tile_index += TILEMAP_ITEM_COUNT;
+        }
+
+        //// Window rendering data ////
+        let window_tile_row = (self.line_y.wrapping_sub(self.window_y) / 8) as usize;
+        let window_tile_pixel_y = self.line_y.wrapping_sub(self.window_y) % 8;
+
+        ////Sprite data////
+        let mut line_sprites = [0u8;10];
+        let sprite_count = self.get_line_sprites(&mut line_sprites);
+        let line_sprites = line_sprites;
+
+        // For each pixel in the scanline
+        for scanline_index in 0..PPU::LCD_WIDTH {
+            if self.bg_window_enable{
+                // If this is going to be a window pixel
+                if self.window_enabled && 
+                   self.window_y <= self.line_y && 
+                   self.window_x <= scanline_index + 7 {
+                    
+                    // Calculate what map block we are in
+                    let window_tile_col = ((scanline_index + 7 - self.window_x) / 8) as usize;
+                    let window_tile_pixel_x = (scanline_index + 7 - self.window_x) % 8;
+                    let mut window_tilemap_index = window_tile_row * TILEMAP_DIMENSION + window_tile_col;
+                    if self.window_tiles_high{
+                        window_tilemap_index += TILEMAP_ITEM_COUNT;
+                    } 
+
+                    // Translate the tilemap block into an index in the tile set.
+                    let tileset_index = self.calc_tileset_index(self.tilemaps[window_tilemap_index]);
+                    bg_pixel = self.tiles[tileset_index].read_pixel(window_tile_pixel_x, window_tile_pixel_y);
+                    bg_pixel = self.bg_palette.table[bg_pixel as usize];
+                    bg_trans = false;
                 }
+                // Draw the background for this pixel.
+                else {
+                    // get the tileset index from the map
+                    let tileset_index = self.calc_tileset_index(self.tilemaps[tile_index]);
+                    bg_pixel = self.tiles[tileset_index].read_pixel(tile_pixel_x, tile_pixel_y);
+                    bg_trans = bg_pixel == 0;
+                    bg_pixel = self.bg_palette.table[bg_pixel as usize];
 
-                // If we have a tile pixel overflow
-                tile_pixel_x += 1;
-                if tile_pixel_x & 0b111 == 0 {
-                    // Reset tile pixel to zero
-                    tile_pixel_x = 0;
+                    // If we have a tile pixel overflow
+                    tile_pixel_x += 1;
+                    if tile_pixel_x & 0b111 == 0 {
+                        // Reset tile pixel to zero
+                        tile_pixel_x = 0;
 
-                    // Advance to the next tile, and check for overflow
-                    tile_index += 1;
-                    if tile_index & 0b11111 == 0 {
-                        // println!("tile_index {}", tile_index); // DEBUG!
-                        tile_index -= TILEMAP_DIMENSION;
+                        // Advance to the next tile, and check for overflow
+                        tile_index += 1;
+                        if tile_index & 0b11111 == 0 {
+                            // println!("tile_index {}", tile_index); // DEBUG!
+                            tile_index -= TILEMAP_DIMENSION;
+                        }
                     }
                 }
+            }
+
+            // If objects are enabled.
+            sprite_behind = true;
+            sprite_pixel = 4;
+            if self.obj_enabled{
+                let mut sprite_list_position = 0;
+
+                for line_sprite_index in 0..sprite_count{
+                // while let Some(sprt_list_index) = self.find_collision_sprite(scanline_index, &line_sprites[sprite_list_position..], sprite_count){
+                    let sprt = &self.sprites[line_sprites[line_sprite_index] as usize];
+                    if self.check_collision_sprite(scanline_index, &sprt){
+                        sprite_behind = sprt.behind_background;
+
+                        let mut tile_x = (scanline_index + TILE_DIMENSION as u8) - sprt.xpos;
+                        if sprt.xflip  {
+                            tile_x = (TILE_DIMENSION-1) as u8 - tile_x;
+                        }
+                        let tile_x = tile_x; 
+
+                        let mut tile = sprt.tile; // The sprite tile
+                        let mut tile_y = (self.line_y as i16 - (sprt.ypos as i16 - 16)) as u8;
+                        if tile_y >= TILE_DIMENSION as u8 {
+                            tile_y -= TILE_DIMENSION as u8;
+                            if sprt.yflip == false {
+                                tile += 1;
+                            }
+                        }
+                        else if sprt.yflip && self.obj_double_sprites{
+                            tile += 1;
+                        }
+                        if sprt.yflip{
+                            tile_y = (TILE_DIMENSION-1) as u8 - tile_y;
+                        }
+
+                        let tile_y = tile_y;
+                        let tile = tile;
+
+                        // Get the sprite pixel
+                        let pallet = if sprt.palette { &self.obj_palette2 } 
+                                    else {&self.obj_palette1};
+                        sprite_pixel = self.tiles[tile as usize].read_pixel(tile_x, tile_y);
+                        // Zero is transparrent
+                        if sprite_pixel == 0 {
+                            sprite_pixel = 4;
+                        } else {
+                            sprite_pixel = pallet.table[sprite_pixel as usize];
+                            break;
+                        }
+
+                    }
+                    
+                }
+            }
+            pixel_block >>= 2;
+            let pixel =
+                if sprite_behind && !bg_trans{
+                    bg_pixel
+                } 
+                else {
+                    if sprite_pixel != 4{
+                        sprite_pixel
+                    }
+                    else {
+                        bg_pixel
+                    }
+                };
+            pixel_block |= pixel << 6;
+
+            // If we have completed a pixel block
+            if scanline_index + 1 & 0b11 == 0{
+                // update the scanline buffer.
+                self.line_buffer.pixeldata[(scanline_index/4) as usize] = pixel_block;
             }
         }
         self.line_pending = true;
@@ -397,6 +528,12 @@ impl PPU {
                 // start of new frame.
                 if self.line_y > PPU::LCD_LINE_VBLANK_END {
                     self.line_y = 0;
+                    self.line_compare = self.line_compare_value == self.line_y;
+                    if self.line_compare {
+                        if self.line_compare_is {
+                            is.request_lcdstat();
+                        }
+                    }
                     self.mode = Mode::SpriteSearch;
                 }
             }
@@ -443,7 +580,7 @@ impl PPU {
     pub fn new() -> PPU {
         let blank_tile = Tile::new();
         let default_sprite = OamSprite::new();
-        PPU {
+        let mut ppu = PPU {
             tile_data: [0;TILESET_RAM],
             tiles: [blank_tile;TILESET_COUNT],
             tilemaps:[0;TILEMAPS_SIZE],
@@ -479,7 +616,14 @@ impl PPU {
             tick_counter: 0,
             line_buffer: ScanlineBuffer::new(),
             line_pending: false,
-        }
+        };
+        // Setup the screen into a post bootrom state.
+        ppu.lcdc_write(
+            PPU::LCDC_ENABLE_MASK | 
+            PPU::LCDC_OBJ_SIZE_MASK | 
+            PPU::LCDC_BG_WINDOW_PRIORITY_MASK
+        );
+        ppu
     }
 
     fn tile_write(&mut self, data:u8, addr:usize)
@@ -550,20 +694,19 @@ impl PPU {
 }
     fn lcds_read(&mut self) -> u8 {
         // Reassemble the LCDS value one bit at a time, starting with the msb.
-        // let mut value = 0;
-        // value |= self.line_compare_is as u8;
-        // value <<= 1;
-        // value |= self.mode2_is as u8;
-        // value <<= 1;
-        // value |= self.mode1_is as u8;
-        // value <<= 1;
-        // value |= self.mode0_is as u8;
-        // value <<= 1;
-        // value |= self.line_compare as u8;
-        // value <<= 2;
-        // value |= self.mode as u8;
-        // value
-        self.lcds
+        let mut value = 0;
+        value |= self.line_compare_is as u8;
+        value <<= 1;
+        value |= self.mode2_is as u8;
+        value <<= 1;
+        value |= self.mode1_is as u8;
+        value <<= 1;
+        value |= self.mode0_is as u8;
+        value <<= 1;
+        value |= self.line_compare as u8;
+        value <<= 2;
+        value |= self.mode as u8;
+        value
     }
 
     /// # Stage a DMA transfer
@@ -1082,6 +1225,30 @@ mod test {
     }
 
     #[test]
+    fn test_ycomp_stat_interrupt_zero_case() {
+        let (mut ppu, mut ram, mut is) = test_pack();
+        is.isrmask = 0xFF;
+        ppu.lcd_enabled = true;
+        ppu.line_compare_is = false;
+        ppu.line_compare_value = 0;
+
+        // Execute 153 lines of drawing
+        for _ in 0..153{
+            ppu.run(456, &mut ram, &mut is);
+        }
+
+        // Line 153, no interrupt
+        ppu.line_compare_is = true;
+        assert_eq!(ppu.line_y, 153);
+        assert_eq!(is.is_lcdstat_active(), false);
+
+        // Line 0, interrupt
+        ppu.run(456, &mut ram, &mut is);
+        assert_eq!(ppu.line_y, 0);
+        assert_eq!(is.is_lcdstat_active(), true);
+    }
+
+    #[test]
     fn test_hblank_stat_interrupt() {
         // This is not accurate, since it does not account for variable line timing.
         let (mut ppu, mut ram, mut is) = test_pack();
@@ -1151,6 +1318,9 @@ mod test {
         //     ]
         // };
         ppu.bg_window_enable = true;
+        ppu.obj_enabled = false;
+        ppu.window_enabled = false;
+        ppu.bg_window_signed_addressing = false;
         ppu.lcd_enabled = true;
 
         // write the pallet data. Should invert colors
@@ -1163,6 +1333,7 @@ mod test {
 
         // Render a line.
         ppu.run(460, &mut ram, &mut is);
+        assert_eq!(ppu.line_y, 1);
 
         assert_eq!(ppu.line_pending, true);
         assert_eq!(ppu.line_buffer.pixeldata[0], 0b00_00_00_11);
@@ -1186,8 +1357,11 @@ mod test {
         //         0, 0, 0, 0,   0, 0, 0, 0,
         //     ]
         // };
-        ppu.bg_window_enable = true;
         ppu.lcd_enabled = true;
+        ppu.bg_window_enable = true;
+        ppu.obj_enabled = false;
+        ppu.bg_window_signed_addressing = false;
+        ppu.window_enabled = false;
         
         // write the pallet data. Should invert colors
         ppu.bus_write8(BG_PALETTE_ADDRESS, 0b1110_0100);
@@ -1267,5 +1441,93 @@ mod test {
         assert_eq!(ppu.line_buffer.pixeldata[1], 0x14);
         assert_eq!(ppu.line_buffer.pixeldata[2], 0x05);
         assert_eq!(ppu.line_buffer.pixeldata[3], 0x14);
+    }
+
+    #[test]
+    fn test_sprite_draw_basecase(){
+        let (mut ppu, mut ram, mut is) = test_pack();
+        let tile_data = [0x7C, 0x7C, 0x00, 0xC6, 0xC6, 0x00, 0x00, 0xFE, 0xC6, 0xC6, 0x00, 0xC6, 0xC6, 0x00, 0x00, 0x00];
+        // What the given tile looks like
+        // let expected_tile = Tile{
+        //     pixel: [
+        //         0, 3, 3, 3,   3, 3, 0, 0,
+        //         2, 2, 0, 0,   0, 2, 2, 0,
+        //         1, 1, 0, 0,   0, 1, 1, 0,
+        //         2, 2, 2, 2,   2, 2, 2, 0,
+        //         3, 3, 0, 0,   0, 3, 3, 0,
+        //         2, 2, 0, 0,   0, 2, 2, 0,
+        //         1, 1, 0, 0,   0, 1, 1, 0,
+        //         0, 0, 0, 0,   0, 0, 0, 0,
+        //     ]
+        // };
+        ppu.lcd_enabled = true;
+        ppu.obj_enabled = true;
+        ppu.bg_window_enable = false;
+
+        // Setup a palette
+        ppu.bus_write8(OBJ_PALETTE1_ADDRESS, 0b1110_0100);
+        // Copy in the tile data into the tile just under 0x8800
+        for (i, x) in tile_data.iter().enumerate() {
+            ppu.bus_write8(TILESET_START_ADDRESS + i , *x);
+        }
+        assert_eq!(ppu.tiles[0].read_pixel(1,0), 3);
+
+        let sprite_data = [
+            16, // Y
+            8,  // X
+            0,  // Tile
+            0   // Attributes
+        ];
+
+        for (i, x) in sprite_data.iter().enumerate() {
+            ppu.bus_write8(OAM_START_ADDRESS + i, *x);
+        }
+        println!("Sprite 0: {:?}", ppu.sprites[0]);
+        assert_eq!(ppu.sprites[0].ypos, 16);
+
+        // Render a line.
+        ppu.run(456, &mut ram, &mut is);
+        println!("line buffer: {:?}", ppu.line_buffer.pixeldata);
+        assert_eq!(ppu.line_pending, true);
+        assert_eq!(ppu.line_y, 1);
+        //         0, 3, 3, 3,   3, 3, 0, 0,
+        assert_eq!(ppu.line_buffer.pixeldata[0], 0b1111_1100);
+        assert_eq!(ppu.line_buffer.pixeldata[1], 0b0000_1111);
+
+        ppu.run(456, &mut ram, &mut is);
+        println!("line buffer: {:?}", ppu.line_buffer.pixeldata);
+        //         2, 2, 0, 0,   0, 2, 2, 0,
+        assert_eq!(ppu.line_buffer.pixeldata[0], 0x0A);
+        assert_eq!(ppu.line_buffer.pixeldata[1], 0x28);
+    }
+
+    #[test]
+    fn test_oam_yscan_8x16(){
+        let (mut ppu, _ram, _is) = test_pack();
+        ppu.obj_double_sprites = true;
+        ppu.sprites[10].ypos = 1;
+        ppu.sprites[12].ypos = 16;
+        let mut sprites_list = [0u8;10];
+
+        let count = ppu.get_line_sprites(&mut sprites_list);
+
+        assert_eq!(count, 2);
+        assert_eq!(sprites_list[0], 10);
+        assert_eq!(sprites_list[1], 12);
+    }
+
+    #[test]
+    fn test_oam_yscan_8x8(){
+        let (mut ppu, mut _ram, mut _is) = test_pack();
+        ppu.obj_double_sprites = false;
+        ppu.sprites[10].ypos = 1;
+        ppu.sprites[12].ypos = 8;
+        ppu.sprites[13].ypos = 9;
+        let mut sprites_list = [0u8;10];
+
+        let count = ppu.get_line_sprites(&mut sprites_list);
+
+        assert_eq!(count, 1);
+        assert_eq!(sprites_list[0], 13);
     }
 }
