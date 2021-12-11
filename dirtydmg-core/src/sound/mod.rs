@@ -1,198 +1,20 @@
+mod channel2;
+mod apu_control;
 use crate::bus::BusRW;
+pub use channel2::*;
+pub use apu_control::*;
 
-enum AudioChannel {
+pub enum AudioChannel {
     Channel1 = 0,
     Channel2 = 1,
     Channel3 = 2,
     Channel4 = 3,
 }
 
-struct Channel2{
-    // Raw control registers
-    nr21: u8,
-    nr22: u8,
-    nr23: u8,
-    nr24: u8,
-
-    length_remaining: u16,
-    freq_counter_mod: u16,
-    freq_counter: u16,
-    duty_pos: u8,
-    output: u8,
-}
-
-impl Channel2 {
-    const duty_patterns:[u8;4] = [0x2, 0x6, 0x1E, 0x7E];
-
-    fn new() -> Channel2{
-        Channel2{
-            nr21: 0,
-            nr22: 0,
-            nr23: 0,
-            nr24: 0,
-
-            length_remaining: 0,
-            freq_counter_mod: 0,
-            freq_counter: 0,
-            duty_pos: 0,
-            output: 0,
-        }
-    }
-    
-    fn clear(&mut self){
-        self.nr21 = 0;
-        self.nr22 = 0;
-        self.nr23 = 0;
-        self.nr24 = 0;
-    }
-
-    fn duty(&self) -> u8{
-        self.nr21 >> 6
-    }
-
-    fn length(&self) -> u8 {
-        self.nr21 & 0b0011_1111
-    }
-
-    fn env_initial_vol(&self) -> u8 {
-        self.nr22 >> 4
-    }
-
-    fn env_dir(&self) -> u8 {
-        (self.nr22 >> 3) & 1
-    }
-
-    fn sweep(&self) -> u8 {
-        self.nr22 & 0b111
-    }
-
-    fn freq(&self) -> u16 {
-        (((self.nr24 & 0b111) as u16) << 8) | (self.nr23) as u16
-    }
-
-    fn initial(&self) -> bool {
-        (self.nr24 & 0b1000_0000) != 0
-    }
-
-    fn stop_on_length(&self) -> bool {
-        (self.nr24 & 0b0100_0000) != 0
-    }
-
-    fn update_freq(&mut self){
-        let fmod = (2048 - self.freq()) * 4;
-        self.freq_counter_mod = fmod;
-        self.freq_counter = fmod;
-    }
-
-    fn update_nr23(&mut self, value: u8){
-        self.nr23 = value;
-        self.update_freq();
-    }
-
-    fn update_nr24(&mut self, value: u8){
-        self.nr24 = value & 0b1100_0111;
-        self.update_freq();
-    }
-
-    fn tick(&mut self){
-        // Just assume always on for now.
-        let running = true; // TODO change this to account for length
-        if running{
-            // check for frequency pattern advance.
-            if self.freq_counter > 0 {
-                self.freq_counter -= 1;
-            }
-
-            if self.freq_counter == 0{
-                // Set the counter to the mod
-                self.freq_counter = self.freq_counter_mod;
-
-                // advance the duty cycle
-                self.duty_pos += 1;
-                self.duty_pos %= 8;
-
-                // Update the output.
-                self.output = (Channel2::duty_patterns[self.duty() as usize] >> self.duty_pos) & 0x1;
-            }
-        }
-    }
-}
-
-enum AudioOutput {
+pub enum AudioOutput {
     Output1 = 0,
     Output2 = 1,
 }
-
-struct ApuControl {
-    nr50: u8,
-    nr51: u8,
-    nr52: u8,
-}
-
-impl ApuControl {
-    pub const NR52_AUDIO_ENABLED_BITMASK:u8 = 0x80;
-
-    fn new() -> ApuControl{
-        ApuControl {
-            nr50: 0,
-            nr51: 0,
-            nr52: 0
-        }
-    }
-
-    // Bit 6-4 - SO2 output level (volume)  (0-7)
-    fn right_channel_volume(&self) -> u8{
-        (self.nr50 >> 4) & 0b111
-    }
-
-    /// Gets the volume for the left sound channel
-    /// Bit 2-0 - SO1 output level (volume)  (0-7)
-    fn left_channel_volume(&self) -> u8 {
-        self.nr50 & 0b111
-    }
-
-    /// Checks if a channel is being sent to an output.
-    /// 
-    /// output - The audio output to be checked
-    /// channel - The channel to check against the output.
-    /// returns true if the channel is enabled for the output.
-    fn is_channel_on_output(&self, output:AudioOutput, channel:AudioChannel) -> bool{
-        // Bit 7 - Output sound 4 to SO2 terminal
-        // Bit 6 - Output sound 3 to SO2 terminal
-        // Bit 5 - Output sound 2 to SO2 terminal
-        // Bit 4 - Output sound 1 to SO2 terminal
-        // Bit 3 - Output sound 4 to SO1 terminal
-        // Bit 2 - Output sound 3 to SO1 terminal
-        // Bit 1 - Output sound 2 to SO1 terminal
-        // Bit 0 - Output sound 1 to SO1 terminal
-        let mut shift = output as u8;         
-        shift += channel as u8 * 4;
-        // We know what bit we want, sample it.
-        (self.nr51 & (1 << shift)) != 0
-    }
-
-    /// Sets the value of the channel active status bit.
-    fn set_audio_channel_active_status(&mut self, active:bool, channel:AudioChannel) {
-        let mask = 1 << (channel as u8);
-        if active {
-            self.nr52 |= mask;
-        } else {
-            self.nr52 &= !mask;
-        }
-    }
-
-    /// Sets the audio enable bit. Nothing more.
-    fn set_audio_enable_bit(&mut self, active:bool) {
-        let mask  = 0x80;
-        if active {
-            self.nr52 |= mask;
-        } else {
-            self.nr52 &= !mask;
-        }
-    }
-
-}
-
 
 struct Apu {
     ch2: Channel2,
