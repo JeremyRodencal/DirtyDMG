@@ -16,7 +16,7 @@ pub enum AudioOutput {
     Output2 = 1,
 }
 
-struct Apu {
+pub struct Apu {
     ch2: Channel2,
     ctrl: ApuControl,
 
@@ -64,6 +64,8 @@ impl Apu {
     pub fn frame_sequencer_tick(&mut self){
         self.frame_sequence_counter += 1;
         if self.frame_sequence_counter > Apu::FRAME_SEQUENCE_UPDATE_TICKS {
+            self.frame_sequence_counter = 0;
+
             // Update the length counter.
             self.frame_length_counter += 1;
             if self.frame_length_counter >= Apu::FRAME_SEQUENCE_LENGTH_TICKS {
