@@ -5,15 +5,21 @@ pub struct Channel2{
     pub nr23: u8,
     pub nr24: u8,
 
-    pub length_remaining: u16,
+    // Shouldn't need to be public...
+    pub length_counter: u16,
+    pub envelope_counter: u8,
     pub freq_counter_mod: u16,
     pub freq_counter: u16,
     pub duty_pos: u8,
+
     pub output: u8,
+    pub current_volume: u8,
+    pub enabled: bool,
 }
 
 impl Channel2 {
     const duty_patterns:[u8;4] = [0x2, 0x6, 0x1E, 0x7E];
+    const LENGTH_TIMER_RELOAD:u16 = 64;
 
     pub fn new() -> Channel2{
         Channel2{
@@ -22,11 +28,14 @@ impl Channel2 {
             nr23: 0,
             nr24: 0,
 
-            length_remaining: 0,
+            length_counter: 0,
+            envelope_counter: 0,
             freq_counter_mod: 0,
             freq_counter: 0,
             duty_pos: 0,
             output: 0,
+            current_volume: 0,
+            enabled: false,
         }
     }
     
@@ -53,7 +62,7 @@ impl Channel2 {
         (self.nr22 >> 3) & 1
     }
 
-    pub fn sweep(&self) -> u8 {
+    pub fn env_period(&self) -> u8 {
         self.nr22 & 0b111
     }
 
@@ -83,12 +92,26 @@ impl Channel2 {
     pub fn update_nr24(&mut self, value: u8){
         self.nr24 = value & 0b1100_0111;
         self.update_freq();
+        if value & 0x80 != 0{
+            self.trigger();
+        }
+    }
+    
+    // Function to handle the enable "trigger" event.
+    fn trigger(&mut self){
+        // Channel is enabled (see length counter).
+        self.enabled = true;     
+        if self.length_counter == 64{
+            self.length_counter = 0;
+        }
+        self.update_freq();
+        self.envelope_counter = 0;
+        self.current_volume = self.env_initial_vol();
     }
 
     pub fn tick(&mut self){
-        // Just assume always on for now.
-        let running = true; // TODO change this to account for length
-        if running{
+        // If the channel is currently enabled.
+        if self.enabled {
             // check for frequency pattern advance.
             if self.freq_counter > 0 {
                 self.freq_counter -= 1;
@@ -104,6 +127,47 @@ impl Channel2 {
 
                 // Update the output.
                 self.output = (Channel2::duty_patterns[self.duty() as usize] >> self.duty_pos) & 0x1;
+            }
+        }
+    }
+
+    pub fn length_tick(&mut self) {
+        // If the length counter is running
+        if self.stop_on_length() {
+            // increment the counter
+            self.length_counter += 1;
+
+            // If the length has expired.
+            if self.length_counter >= Channel2::LENGTH_TIMER_RELOAD {
+                self.length_counter = 0;
+                self.enabled = false;
+            }
+        }
+    }
+
+    pub fn envelope_tick(&mut self) {
+        // Quick abort if env is disabled.
+        if self.env_period() == 0{
+            return;
+        }
+
+        // tick the envelope counter;
+        self.envelope_counter += 1;
+
+        // If an envelope period has elapsed.
+        if self.envelope_counter >= self.env_period() {
+            // Reset the counter
+            self.envelope_counter = 0;
+
+            // Update the volume
+            if self.env_dir() > 0 {
+                if self.current_volume < 15{
+                    self.current_volume += 1;
+                }
+            } else {
+                if self.current_volume != 0 {
+                    self.current_volume -= 1;
+                }
             }
         }
     }
