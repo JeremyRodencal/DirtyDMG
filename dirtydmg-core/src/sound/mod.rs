@@ -20,6 +20,11 @@ struct Apu {
     ch2: Channel2,
     ctrl: ApuControl,
 
+    frame_sequence_counter: u16,
+    frame_length_counter: u16,
+    frame_envelope_counter: u16,
+    frame_sweep_counter: u16,
+
     subtick_counter: u16,
     sample_ticks: u16,
     sample_subticks: u16,
@@ -36,10 +41,19 @@ impl Apu {
     const NR51_ADDRESS:usize = 0xff24;
     const NR52_ADDRESS:usize = 0xff25;
 
+    const FRAME_SEQUENCE_UPDATE_TICKS: u16 = 8192;
+    const FRAME_SEQUENCE_LENGTH_TICKS: u16 = 2;
+    const FRAME_SEQUENCE_ENVELOPE_TICKS: u16 = 8;
+    const FRAME_SEQUENCE_SWEEP_TICKS: u16 = 4;
+
     pub fn new() -> Apu{
-        Apu{ 
+        Apu { 
             ch2: Channel2::new(),
             ctrl: ApuControl::new(),
+            frame_sequence_counter: 0,
+            frame_length_counter: 0,
+            frame_envelope_counter: 0,
+            frame_sweep_counter: 0,
             sample_ticks: 95,
             sample_subticks: 1201,
             sample_subtick_rate: 11025,
@@ -47,10 +61,39 @@ impl Apu {
         }
     }
 
+    pub fn frame_sequencer_tick(&mut self){
+        self.frame_sequence_counter += 1;
+        if self.frame_sequence_counter > Apu::FRAME_SEQUENCE_UPDATE_TICKS {
+            // Update the length counter.
+            self.frame_length_counter += 1;
+            if self.frame_length_counter >= Apu::FRAME_SEQUENCE_LENGTH_TICKS {
+                self.frame_length_counter = 0;
+                self.ch2.length_tick();
+                // TODO tick all channels.
+            }
+
+            // Update the envelope counter
+            self.frame_envelope_counter += 1;
+            if self.frame_envelope_counter >= Apu::FRAME_SEQUENCE_ENVELOPE_TICKS {
+                self.frame_envelope_counter = 0;
+                self.ch2.envelope_tick();
+                // TODO tick all channels.
+            }
+
+            // Update the sweep counter
+            self.frame_sweep_counter += 1;
+            if self.frame_sweep_counter >= Apu::FRAME_SEQUENCE_SWEEP_TICKS {
+                self.frame_sweep_counter = 0;
+                // TODO tick all channels.
+            }
+        }
+    }
+
     pub fn tick(&mut self, ticks:u16){
         // TODO this is only a stub.
         for _ in 0..ticks {
             self.ch2.tick();
+            self.frame_sequencer_tick();
         }
     }
 
