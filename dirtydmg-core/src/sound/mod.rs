@@ -48,7 +48,10 @@ impl Apu {
     const FRAME_SEQUENCE_ENVELOPE_TICKS: u16 = 8;
     const FRAME_SEQUENCE_SWEEP_TICKS: u16 = 4;
 
+    // TODO - this is currently all hardcoded to 44.1khz sample rates.
     const SAMPLE_TICKS:u16 = 95;
+    const SAMPLE_SUBTICK_INCREMENT: u16 = 1201;
+    const SAMPLE_SUBTICK_LIMIT: u16 = 11025;
 
     pub fn new() -> Apu{
         Apu { 
@@ -68,7 +71,7 @@ impl Apu {
 
     pub fn frame_sequencer_tick(&mut self){
         self.frame_sequence_counter += 1;
-        if self.frame_sequence_counter > Apu::FRAME_SEQUENCE_UPDATE_TICKS {
+        if self.frame_sequence_counter >= Apu::FRAME_SEQUENCE_UPDATE_TICKS {
             self.frame_sequence_counter = 0;
 
             // Update the length counter.
@@ -97,26 +100,35 @@ impl Apu {
     }
 
     fn sample_tick(&mut self) {
-        // Increment ticks and subticks
+        // Increment ticks
         self.sample_ticks += 1;
-        self.subtick_counter += 1201;
-        if self.subtick_counter >= 11025 {
-            self.subtick_counter -= 11025;
-            self.sample_ticks -= 1;
-        }
 
-        if self.sample_ticks >= Apu::SAMPLE_TICKS{
-            self.sample_ticks = 0;
+        // If enough ticks have occured for a sample to be generated.
+        if self.sample_ticks >= Apu::SAMPLE_TICKS {
 
-            // Todo take a sample.
-            if self.ch2.enabled{
-                let volume = self.ch2.current_volume;
-                let mut amp = volume as i8 * 8;
-                let output = self.ch2.output;
-                if output == 0 { 
-                    amp *= -1;
+            // Increment the subticks
+            self.subtick_counter += Apu::SAMPLE_SUBTICK_INCREMENT;
+            if self.subtick_counter >= Apu::SAMPLE_SUBTICK_LIMIT {
+                // The subticks have added up to an entire tick.
+                // clear the stubticks, but don't take a sample yet.
+                self.subtick_counter -= Apu::SAMPLE_SUBTICK_LIMIT;
+            }
+            // No subtick overflow to delay for. Take a sample.
+            else {
+                self.sample_ticks = 0;
+
+                // TODO Extract to a separate sample function.
+                // TODO mix all channels.
+                // TODO respect left and right outputs.
+                if self.ch2.enabled{
+                    let volume = self.ch2.current_volume;
+                    let mut amp = volume as i8 * 8;
+                    let output = self.ch2.output;
+                    if output == 0 { 
+                        amp *= -1;
+                    }
+                    self.sample = Some((amp, amp));
                 }
-                self.sample = Some((amp, amp));
             }
         }
     }

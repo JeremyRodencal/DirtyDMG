@@ -103,11 +103,13 @@ fn main() {
     let desired_spec = AudioSpecDesired {
         freq: Some(44100),
         channels: Some(1),  // mono
-        samples: None       // default sample size
+        samples: Some(512)       // default sample size
     };
     let audio_queue:AudioQueue<i8> = audio.open_queue(
         None,
         &desired_spec).unwrap();
+    println!("Frequency = {}", audio_queue.spec().freq);
+    println!("Buffer size = {}", audio_queue.spec().samples);
     audio_queue.resume();
 
     let window = video.window("Dirty DMG", 160, 144)
@@ -123,13 +125,22 @@ fn main() {
     let mut timer = Instant::now();
     let mut quit = false;
     let mut start_instant = Instant::now();
-    // let frametime = Duration::new(0, 15166666);
-    let frametime = Duration::new(0, 14166666);
+    let frametime = Duration::new(0, 15466666);
+    // let frametime = Duration::new(0, 14166666);
+    let mut buf = Vec::<i8>::new();
     loop {
+        while audio_queue.size() > 512 {
+            std::thread::sleep_ms(1);
+        }
         dmg.update();
 
-        if let Some((left, right)) = dmg.apu.as_ref().borrow_mut().get_sample() {
-            audio_queue.queue(&[left]);
+        if let Some((left, _right)) = dmg.apu.as_ref().borrow_mut().get_sample() {
+            buf.push(left);
+            if buf.len() >= 128{
+                audio_queue.queue(&buf);
+                buf.clear();
+            }
+            
             // println!("queued audio");
         }
 
@@ -161,10 +172,10 @@ fn main() {
                         _ => {}
                     }
                 }
-                if start_instant.elapsed() < frametime{
-                    ::std::thread::sleep(frametime - start_instant.elapsed());
-                }
-                start_instant = Instant::now();
+                // if start_instant.elapsed() < frametime{
+                //     ::std::thread::sleep(frametime - start_instant.elapsed());
+                // }
+                // start_instant = Instant::now();
             }
         }
         
