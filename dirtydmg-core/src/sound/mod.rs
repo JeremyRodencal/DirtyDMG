@@ -29,6 +29,8 @@ pub struct Apu {
     sample_ticks: u16,
     sample_subticks: u16,
     sample_subtick_rate: u16,
+
+    sample: Option<(i8, i8)>,
 }
 
 impl Apu {
@@ -46,6 +48,8 @@ impl Apu {
     const FRAME_SEQUENCE_ENVELOPE_TICKS: u16 = 8;
     const FRAME_SEQUENCE_SWEEP_TICKS: u16 = 4;
 
+    const SAMPLE_TICKS:u16 = 95;
+
     pub fn new() -> Apu{
         Apu { 
             ch2: Channel2::new(),
@@ -57,7 +61,8 @@ impl Apu {
             sample_ticks: 95,
             sample_subticks: 1201,
             sample_subtick_rate: 11025,
-            subtick_counter: 0
+            subtick_counter: 0,
+            sample: None,
         }
     }
 
@@ -91,11 +96,43 @@ impl Apu {
         }
     }
 
+    fn sample_tick(&mut self) {
+        // Increment ticks and subticks
+        self.sample_ticks += 1;
+        self.subtick_counter += 1201;
+        if self.subtick_counter >= 11025 {
+            self.subtick_counter -= 11025;
+            self.sample_ticks -= 1;
+        }
+
+        if self.sample_ticks >= Apu::SAMPLE_TICKS{
+            self.sample_ticks = 0;
+
+            // Todo take a sample.
+            if self.ch2.enabled{
+                let volume = self.ch2.current_volume;
+                let mut amp = volume as i8 * 8;
+                let output = self.ch2.output;
+                if output == 0 { 
+                    amp *= -1;
+                }
+                self.sample = Some((amp, amp));
+            }
+        }
+    }
+
+    pub fn get_sample(&mut self) -> Option<(i8, i8)>{
+        let sample = self.sample;
+        self.sample = None;
+        return sample;
+    }
+
     pub fn tick(&mut self, ticks:u16){
         // TODO this is only a stub.
         for _ in 0..ticks {
             self.ch2.tick();
             self.frame_sequencer_tick();
+            self.sample_tick();
         }
     }
 

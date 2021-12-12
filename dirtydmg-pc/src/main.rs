@@ -1,7 +1,7 @@
 use std::io::{ErrorKind};
 use std::io::Read;
 use std::fs;
-use std::time::{Instant};
+use std::time::{Instant, Duration};
 
 extern crate sdl2;
 
@@ -10,6 +10,7 @@ use sdl2::render::{Canvas, RenderTarget};
 use sdl2::event::Event;
 use sdl2::rect::Point;
 use sdl2::keyboard::Keycode;
+use sdl2::audio::{AudioSpecDesired, AudioQueue};
 
 use dirtydmg_core::dmg::Dmg;
 use dirtydmg_core::input::Button;
@@ -98,6 +99,16 @@ fn main() {
     // SDL stuff
     let context = sdl2::init().unwrap();
     let video = context.video().unwrap();
+    let audio = context.audio().unwrap();
+    let desired_spec = AudioSpecDesired {
+        freq: Some(44100),
+        channels: Some(1),  // mono
+        samples: None       // default sample size
+    };
+    let audio_queue:AudioQueue<i8> = audio.open_queue(
+        None,
+        &desired_spec).unwrap();
+    audio_queue.resume();
 
     let window = video.window("Dirty DMG", 160, 144)
         .position_centered()
@@ -111,8 +122,16 @@ fn main() {
     let mut framecount = 0;
     let mut timer = Instant::now();
     let mut quit = false;
+    let mut start_instant = Instant::now();
+    // let frametime = Duration::new(0, 15166666);
+    let frametime = Duration::new(0, 14166666);
     loop {
         dmg.update();
+
+        if let Some((left, right)) = dmg.apu.as_ref().borrow_mut().get_sample() {
+            audio_queue.queue(&[left]);
+            // println!("queued audio");
+        }
 
         // if there is a pending line to draw
         if dmg.ppu.as_ref().borrow().line_pending {
@@ -126,7 +145,6 @@ fn main() {
                     println!("100 frames in {} seconds for {} fps", timer.elapsed().as_secs_f32(), 100f64/timer.elapsed().as_secs_f64());
                     timer = Instant::now();
                     framecount = 0;
-
                 }
                 for event in event_pump.poll_iter() {
                     match event {
@@ -143,8 +161,13 @@ fn main() {
                         _ => {}
                     }
                 }
+                if start_instant.elapsed() < frametime{
+                    ::std::thread::sleep(frametime - start_instant.elapsed());
+                }
+                start_instant = Instant::now();
             }
         }
+        
         if quit{
             return;
         }

@@ -25,7 +25,7 @@ pub struct Dmg{
     stu: Rc<RefCell<SerialUnit>>,
     tu: Rc<RefCell<TimerUnit>>,
     gamepad: Rc<RefCell<Gamepad>>,
-    apu: Rc<RefCell<Apu>>,
+    pub apu: Rc<RefCell<Apu>>,
 }
 
 impl Dmg {
