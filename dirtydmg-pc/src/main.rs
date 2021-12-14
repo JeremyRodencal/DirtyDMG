@@ -8,9 +8,10 @@ extern crate sdl2;
 use sdl2::pixels::Color;
 use sdl2::render::{Canvas, RenderTarget};
 use sdl2::event::Event;
-use sdl2::rect::Point;
+use sdl2::rect::{Point, Rect};
 use sdl2::keyboard::Keycode;
 use sdl2::audio::{AudioSpecDesired, AudioQueue};
+use sdl2::joystick::*;
 
 use dirtydmg_core::dmg::Dmg;
 use dirtydmg_core::input::Button;
@@ -35,7 +36,7 @@ fn load_file(filepath: &str) -> Result<Vec<u8>, std::io::Error>
     return Ok(rom_data);
 }
 
-fn draw_line<T>(canvas: &mut Canvas<T>, y: u8, buffer: &ScanlineBuffer)
+fn draw_line<T>(canvas: &mut Canvas<T>, y: u8, buffer: &ScanlineBuffer, scale: u32)
     where T: RenderTarget {
 
     let colors: [Color;4] = [
@@ -49,7 +50,11 @@ fn draw_line<T>(canvas: &mut Canvas<T>, y: u8, buffer: &ScanlineBuffer)
     for pixelpack in buffer.pixeldata{
         for sub_pixel in 0..4{
             canvas.set_draw_color(colors[((pixelpack >> (2 * sub_pixel))&0b11) as usize]);
-            canvas.draw_point(Point::new(x, y as i32)).unwrap();
+            // canvas.draw_point(Point::new(x, y as i32)).unwrap();
+            canvas.draw_rect(Rect::new(
+                x * scale as i32, 
+                y as i32 * scale as i32, 
+                scale, scale)).unwrap();
             x += 1
         }
     }
@@ -69,6 +74,24 @@ fn terrible_input_proc(dmg: &mut Dmg, key:Keycode, pressed:bool){
     };
     if let Some(b) = btn {
         dmg.input(b, pressed);
+    }
+}
+
+fn terrible_joypad_btn_proc(dmg: &mut Dmg, _which:u32, btn_idx:u8, down:bool){
+    println!("btn {}", btn_idx);
+    let btn = match btn_idx {
+        0 => {Some(Button::A)},
+        2 => {Some(Button::B)},
+        6 => {Some(Button::Start)},
+        4 => {Some(Button::Select)},
+        11 => {Some(Button::Up)}
+        12 => {Some(Button::Down)}
+        13 => {Some(Button::Left)}
+        14 => {Some(Button::Right)}
+        _ => None
+    };
+    if let Some(b) = btn {
+        dmg.input(b, down);
     }
 }
 
@@ -96,10 +119,25 @@ fn main() {
         }
     }
 
+    let scale = 2;
+
     // SDL stuff
     let context = sdl2::init().unwrap();
     let video = context.video().unwrap();
     let audio = context.audio().unwrap();
+    let joystick = context.joystick().unwrap();
+
+    let mut joy:Option<Joystick> = None;
+    if let Ok(x) = joystick.num_joysticks(){
+        println!("Found {} joysticks", x);
+        if x > 0 {
+            if let Ok(j) = joystick.open(0){
+                println!("Openned joystick {}", 0);
+                joy = Some(j);
+            }
+        }
+    }
+
     let desired_spec = AudioSpecDesired {
         freq: Some(44100),
         channels: Some(1),  // mono
@@ -112,7 +150,7 @@ fn main() {
     println!("Buffer size = {}", audio_queue.spec().samples);
     audio_queue.resume();
 
-    let window = video.window("Dirty DMG", 160, 144)
+    let window = video.window("Dirty DMG", 160 * scale, 144 * scale)
         .position_centered()
         .build()
         .unwrap();
@@ -148,7 +186,7 @@ fn main() {
         if dmg.ppu.as_ref().borrow().line_pending {
             let y = dmg.ppu.as_ref().borrow().line_y;
             dmg.ppu.as_ref().borrow_mut().line_pending = false;
-            draw_line(&mut canvas, y, &dmg.ppu.as_ref().borrow().line_buffer);
+            draw_line(&mut canvas, y, &dmg.ppu.as_ref().borrow().line_buffer, scale);
             if y == 143 {
                 canvas.present();
                 framecount += 1;
@@ -168,6 +206,12 @@ fn main() {
                         },
                         Event::KeyDown   { keycode: Some(key), .. } => { 
                             terrible_input_proc(&mut dmg, key, true);
+                        },
+                        Event::JoyButtonDown{timestamp:_, which, button_idx} => {
+                            terrible_joypad_btn_proc(&mut dmg, which, button_idx, true);
+                        },
+                        Event::JoyButtonUp{timestamp:_, which, button_idx} => {
+                            terrible_joypad_btn_proc(&mut dmg, which, button_idx, false);
                         },
                         _ => {}
                     }

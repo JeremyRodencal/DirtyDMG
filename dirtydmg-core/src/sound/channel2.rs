@@ -101,9 +101,7 @@ impl Channel2 {
     fn trigger(&mut self){
         // Channel is enabled (see length counter).
         self.enabled = true;     
-        if self.length_counter == 64{
-            self.length_counter = 0;
-        }
+        self.length_counter = 0;
         self.update_freq();
         self.envelope_counter = 0;
         self.current_volume = self.env_initial_vol();
@@ -138,7 +136,7 @@ impl Channel2 {
             self.length_counter += 1;
 
             // If the length has expired.
-            if self.length_counter >= Channel2::LENGTH_TIMER_RELOAD {
+            if self.length_counter >= Channel2::LENGTH_TIMER_RELOAD - self.length() as u16{
                 self.length_counter = 0;
                 self.enabled = false;
             }

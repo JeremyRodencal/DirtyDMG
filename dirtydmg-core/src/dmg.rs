@@ -53,7 +53,7 @@ impl Dmg {
         bus.add_item(BusItem::new(0xFF01, 0xFF02, stu.clone()));
         bus.add_item(BusItem::new(0xFF04, 0xFF07, tu.clone()));
         bus.add_item(BusItem::new(0xFF0F, 0xFF0F, isr.clone()));
-        bus.add_item(BusItem::new(0xFF10, 0xFF26, apu.clone()));
+        bus.add_item(BusItem::new(0xFF10, 0xFF3F, apu.clone()));
         bus.add_item(BusItem::new(0xFF40, 0xFF4B, ppu.clone()));
         bus.add_item(BusItem::new(0xFF80, 0xFFFE, zero_page.clone()));
         bus.add_item(BusItem::new(0xFFFF, 0xFFFF, isr.clone()));

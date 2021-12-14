@@ -1,7 +1,13 @@
+mod channel1;
 mod channel2;
+mod channel3;
+mod channel4;
 mod apu_control;
 use crate::bus::BusRW;
+pub use channel1::*;
 pub use channel2::*;
+pub use channel3::*;
+pub use channel4::*;
 pub use apu_control::*;
 
 pub enum AudioChannel {
@@ -17,7 +23,10 @@ pub enum AudioOutput {
 }
 
 pub struct Apu {
+    ch1: Channel1,
     ch2: Channel2,
+    ch3: Channel3,
+    ch4: Channel4,
     ctrl: ApuControl,
 
     frame_sequence_counter: u16,
@@ -34,14 +43,31 @@ pub struct Apu {
 }
 
 impl Apu {
+    const NR10_ADDRESS:usize = 0xFF10;
+    const NR11_ADDRESS:usize = 0xFF11;
+    const NR12_ADDRESS:usize = 0xFF12;
+    const NR13_ADDRESS:usize = 0xFF13;
+    const NR14_ADDRESS:usize = 0xFF14;
+
     const NR21_ADDRESS:usize = 0xFF16;
     const NR22_ADDRESS:usize = 0xFF17;
     const NR23_ADDRESS:usize = 0xff18;
     const NR24_ADDRESS:usize = 0xff19;
 
-    const NR50_ADDRESS:usize = 0xff23;
-    const NR51_ADDRESS:usize = 0xff24;
-    const NR52_ADDRESS:usize = 0xff25;
+    const NR30_ADDRESS:usize = 0xFF1A;
+    const NR31_ADDRESS:usize = 0xFF1B;
+    const NR32_ADDRESS:usize = 0xFF1C;
+    const NR33_ADDRESS:usize = 0xFF1D;
+    const NR34_ADDRESS:usize = 0xFF1E;
+
+    const NR41_ADDRESS:usize = 0xFF20;
+    const NR42_ADDRESS:usize = 0xFF21;
+    const NR43_ADDRESS:usize = 0xFF22;
+    const NR44_ADDRESS:usize = 0xFF23;
+
+    const NR50_ADDRESS:usize = 0xFF24;
+    const NR51_ADDRESS:usize = 0xFF25;
+    const NR52_ADDRESS:usize = 0xFF26;
 
     const FRAME_SEQUENCE_UPDATE_TICKS: u16 = 8192;
     const FRAME_SEQUENCE_LENGTH_TICKS: u16 = 2;
@@ -55,7 +81,10 @@ impl Apu {
 
     pub fn new() -> Apu{
         Apu { 
+            ch1: Channel1::new(),
             ch2: Channel2::new(),
+            ch3: Channel3::new(),
+            ch4: Channel4::new(),
             ctrl: ApuControl::new(),
             frame_sequence_counter: 0,
             frame_length_counter: 0,
@@ -78,23 +107,26 @@ impl Apu {
             self.frame_length_counter += 1;
             if self.frame_length_counter >= Apu::FRAME_SEQUENCE_LENGTH_TICKS {
                 self.frame_length_counter = 0;
+                self.ch1.length_tick();
                 self.ch2.length_tick();
-                // TODO tick all channels.
+                self.ch3.length_tick();
+                self.ch4.length_tick();
             }
 
             // Update the envelope counter
             self.frame_envelope_counter += 1;
             if self.frame_envelope_counter >= Apu::FRAME_SEQUENCE_ENVELOPE_TICKS {
                 self.frame_envelope_counter = 0;
+                self.ch1.envelope_tick();
                 self.ch2.envelope_tick();
-                // TODO tick all channels.
+                self.ch4.envelope_tick();
             }
 
             // Update the sweep counter
             self.frame_sweep_counter += 1;
             if self.frame_sweep_counter >= Apu::FRAME_SEQUENCE_SWEEP_TICKS {
                 self.frame_sweep_counter = 0;
-                // TODO tick all channels.
+                self.ch1.sweep_tick();
             }
         }
     }
@@ -120,15 +152,58 @@ impl Apu {
                 // TODO Extract to a separate sample function.
                 // TODO mix all channels.
                 // TODO respect left and right outputs.
+                let mut ch2 = 0i8;
                 if self.ch2.enabled{
                     let volume = self.ch2.current_volume;
-                    let mut amp = volume as i8 * 8;
+                    let mut amp = volume as i8 * 2;
                     let output = self.ch2.output;
                     if output == 0 { 
                         amp *= -1;
                     }
-                    self.sample = Some((amp, amp));
+                    ch2 = amp;
                 }
+                let mut ch1 = 0i8;
+                if self.ch1.enabled{
+                    let volume = self.ch1.current_volume;
+                    let mut amp = volume as i8 * 2;
+                    let output = self.ch1.output;
+                    if output == 0 { 
+                        amp *= -1;
+                    }
+                    ch1 = amp;
+                }
+
+                let mut ch4 = 0i8;
+                if self.ch4.enabled{
+                    let volume = self.ch4.current_volume;
+                    let mut amp = volume as i8 * 2;
+                    let output = self.ch4.output;
+                    if output == 0 { 
+                        amp *= -1;
+                    }
+                    ch4 = amp;
+                    // println!("Channel 4 sample: {}", ch4);
+                }
+
+                let mut ch3 = 0i8;
+                if self.ch3.enabled{
+                    ch3 = self.ch3.output;
+                }
+
+                let mut samp = 0
+                                + ch1 as i16 
+                                + ch2 as i16 
+                                + ch3 as i16
+                                + ch4 as i16
+                                ;
+                if samp > 127{
+                    samp = 127;
+                }
+                if samp < -128 {
+                    samp = -128;
+                }
+                let samp = samp as i8;
+                self.sample = Some((samp, samp));
             }
         }
     }
@@ -140,9 +215,11 @@ impl Apu {
     }
 
     pub fn tick(&mut self, ticks:u16){
-        // TODO this is only a stub.
         for _ in 0..ticks {
+            self.ch1.tick();
             self.ch2.tick();
+            self.ch3.tick();
+            self.ch4.tick();
             self.frame_sequencer_tick();
             self.sample_tick();
         }
@@ -161,6 +238,24 @@ impl Apu {
 impl BusRW for Apu {
     fn bus_write8(&mut self, addr:usize, value:u8){
         match addr {
+            // Channel 1
+            Apu::NR10_ADDRESS => {
+                self.ch1.nr10 = value;
+            }
+            Apu::NR11_ADDRESS => {
+                self.ch1.nr11 = value;
+            }
+            Apu::NR12_ADDRESS => {
+                self.ch1.nr12 = value;
+            }
+            Apu::NR13_ADDRESS => {
+                self.ch1.update_nr13(value);
+            }
+            Apu::NR14_ADDRESS => {
+                self.ch1.update_nr14(value);
+            }
+
+            // Channel 2
             Apu::NR21_ADDRESS => {
                 self.ch2.nr21 = value;
             }
@@ -172,6 +267,37 @@ impl BusRW for Apu {
             }
             Apu::NR24_ADDRESS => {
                 self.ch2.update_nr24(value)
+            }
+
+            // Channel 3
+            Apu::NR30_ADDRESS => {
+                self.ch3.nr30 = value & 0x80;
+            }
+            Apu::NR31_ADDRESS => {
+                self.ch3.nr31 = value;
+            }
+            Apu::NR32_ADDRESS => {
+                self.ch3.nr32 = value & 0b0110_0000;
+            }
+            Apu::NR33_ADDRESS => {
+                self.ch3.update_nr33(value)
+            }
+            Apu::NR34_ADDRESS => {
+                self.ch3.update_nr24(value)
+            }
+
+            // Channel 4
+            Apu::NR41_ADDRESS => {
+                self.ch4.nr41 = value
+            }
+            Apu::NR42_ADDRESS => {
+                self.ch4.nr42 = value
+            }
+            Apu::NR43_ADDRESS => {
+                self.ch4.update_nr43(value)
+            }
+            Apu::NR44_ADDRESS => {
+                self.ch4.update_nr44(value)
             }
 
             /* Control Registers */
@@ -187,6 +313,10 @@ impl BusRW for Apu {
                 let enabled = value & ApuControl::NR52_AUDIO_ENABLED_BITMASK != 0;
                 self.enable_disable_audio(enabled);
             }
+
+            0xFF30..=0xFF3F => {
+                self.ch3.bus_write8(addr, value);
+            }
             
             _ => {}
         }
@@ -194,6 +324,22 @@ impl BusRW for Apu {
 
     fn bus_read8(&mut self, addr:usize) -> u8{
         match addr {
+            // Channel 1
+            Apu::NR10_ADDRESS => {
+                self.ch1.nr10
+            }
+            Apu::NR11_ADDRESS => {
+                self.ch1.nr11 & 0b1100_0000
+            }
+            Apu::NR12_ADDRESS => {
+                self.ch1.nr12
+            }
+            Apu::NR13_ADDRESS => { 0 }
+            // Only bit 6 can be read.
+            Apu::NR14_ADDRESS => {
+                self.ch1.nr14 & 0b0100_0000
+            }
+
             Apu::NR21_ADDRESS => {
                 // Pandocs seems to imply that only the top 2 bits are readable.
                 self.ch2.nr21 & 0b1100_0000
@@ -208,6 +354,36 @@ impl BusRW for Apu {
                 self.ch2.nr24 & 0b0100_0000
             }
 
+            Apu::NR30_ADDRESS => {
+                self.ch3.nr30 & 0x80
+            }
+            Apu::NR31_ADDRESS => {
+                0xFF // write only
+            }
+            Apu::NR32_ADDRESS => {
+                self.ch3.nr32 & 0b0110_0000
+            }
+            Apu::NR33_ADDRESS => {
+                0xFF // write only
+            }
+            Apu::NR34_ADDRESS => {
+                self.ch3.nr34 & 0b0100_0000
+            }
+
+            // Channel 4
+            Apu::NR41_ADDRESS => {
+                0xFF
+            }
+            Apu::NR42_ADDRESS => {
+                self.ch4.nr42
+            }
+            Apu::NR43_ADDRESS => {
+                self.ch4.nr43
+            }
+            Apu::NR44_ADDRESS => {
+                self.ch4.nr44 & 0b0100_0000
+            }
+
             // Control registers
             Apu::NR50_ADDRESS => {
                 self.ctrl.nr50
@@ -217,6 +393,10 @@ impl BusRW for Apu {
             }
             Apu::NR52_ADDRESS => {
                 self.ctrl.nr52
+            }
+
+            0xFF30..=0xFF3F => {
+                self.ch3.bus_read8(addr)
             }
 
             // TODO - turn this into a panic
