@@ -20,7 +20,7 @@ pub struct Channel1{
 }
 
 impl Channel1 {
-    const duty_patterns:[u8;4] = [0x2, 0x6, 0x1E, 0x7E];
+    const DUTY_PATTERNS:[u8;4] = [0x2, 0x6, 0x1E, 0x7E];
     const LENGTH_TIMER_RELOAD:u16 = 64;
     const SWEEP_TIMER_RELOAD:u8 = 8;
 
@@ -157,7 +157,7 @@ impl Channel1 {
                 self.duty_pos %= 8;
 
                 // Update the output.
-                self.output = (Channel1::duty_patterns[self.duty() as usize] >> self.duty_pos) & 0x1;
+                self.output = (Channel1::DUTY_PATTERNS[self.duty() as usize] >> self.duty_pos) & 0x1;
             }
         }
     }

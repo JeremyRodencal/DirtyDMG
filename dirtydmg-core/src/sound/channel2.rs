@@ -18,7 +18,7 @@ pub struct Channel2{
 }
 
 impl Channel2 {
-    const duty_patterns:[u8;4] = [0x2, 0x6, 0x1E, 0x7E];
+    const DUTY_PATTERNS:[u8;4] = [0x2, 0x6, 0x1E, 0x7E];
     const LENGTH_TIMER_RELOAD:u16 = 64;
 
     pub fn new() -> Channel2{
@@ -124,7 +124,7 @@ impl Channel2 {
                 self.duty_pos %= 8;
 
                 // Update the output.
-                self.output = (Channel2::duty_patterns[self.duty() as usize] >> self.duty_pos) & 0x1;
+                self.output = (Channel2::DUTY_PATTERNS[self.duty() as usize] >> self.duty_pos) & 0x1;
             }
         }
     }
