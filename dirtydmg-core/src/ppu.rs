@@ -429,7 +429,10 @@ impl PPU {
                         }
                         let tile_x = tile_x; 
 
-                        let mut tile = sprt.tile; // The sprite tile
+                        let mut tile = sprt.tile;
+                        if self.obj_double_sprites{
+                            tile &= 0xFE; // ignore lowest bit in double mode.
+                        }
                         let mut tile_y = (self.line_y as i16 - (sprt.ypos as i16 - 16)) as u8;
                         if tile_y >= TILE_DIMENSION as u8 {
                             tile_y -= TILE_DIMENSION as u8;
