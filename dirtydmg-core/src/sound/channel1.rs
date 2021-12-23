@@ -22,7 +22,6 @@ pub struct Channel1{
 impl Channel1 {
     const DUTY_PATTERNS:[u8;4] = [0x2, 0x6, 0x1E, 0x7E];
     const LENGTH_TIMER_RELOAD:u16 = 64;
-    const SWEEP_TIMER_RELOAD:u8 = 8;
 
     pub fn new() -> Channel1{
         Channel1{
