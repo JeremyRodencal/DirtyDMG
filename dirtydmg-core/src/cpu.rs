@@ -308,6 +308,7 @@ impl Cpu {
         self.busy_cycles = instruction.cycles as u32;
 
         // Execute the operation in the instruction
+        // println!("[{:#0X},{:#0X},{:#0X}]{:?} @ {:#04X}", data[0], data[1], data[2], instruction.op, self.reg.pc);
         self.execute_operation(bus, &data, &instruction.op);
         return self.busy_cycles as u8;
     }
