@@ -384,8 +384,10 @@ impl PPU {
                     // Translate the tilemap block into an index in the tile set.
                     let tileset_index = self.calc_tileset_index(self.tilemaps[window_tilemap_index]);
                     bg_pixel = self.tiles[tileset_index].read_pixel(window_tile_pixel_x, window_tile_pixel_y);
+
+                    // Decide if the pixel is transparent, then get the pixel value from the palette.
+                    bg_trans = bg_pixel == 0;
                     bg_pixel = self.bg_palette.table[bg_pixel as usize];
-                    bg_trans = false;
                 }
                 // Draw the background for this pixel.
                 else {
