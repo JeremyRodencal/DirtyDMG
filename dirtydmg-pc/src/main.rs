@@ -5,10 +5,10 @@ use std::time::{Instant, Duration};
 
 extern crate sdl2;
 
-use sdl2::pixels::Color;
-use sdl2::render::{Canvas, RenderTarget};
+use sdl2::pixels::{Color, PixelFormatEnum};
 use sdl2::event::Event;
-use sdl2::rect::{Point, Rect};
+use sdl2::rect::{Rect};
+use sdl2::surface::Surface;
 use sdl2::keyboard::Keycode;
 use sdl2::audio::{AudioSpecDesired, AudioQueue};
 use sdl2::joystick::*;
@@ -36,26 +36,36 @@ fn load_file(filepath: &str) -> Result<Vec<u8>, std::io::Error>
     return Ok(rom_data);
 }
 
-fn draw_line<T>(canvas: &mut Canvas<T>, y: u8, buffer: &ScanlineBuffer, scale: u32)
-    where T: RenderTarget {
+struct DmgSurfaceRenderer {
+    surface: Surface<'static>,
+    colors: [Color;4]
+}
 
-    let colors: [Color;4] = [
-        Color{r: 255, g:255, b:255, a: 0},
-        Color{r: 170, g:170, b:170, a: 0},
-        Color{r: 85,  g:85,  b: 85, a: 0},
-        Color{r: 0,   g:0,   b: 0,  a: 0},
-    ];
+impl DmgSurfaceRenderer{
+    fn new(format:PixelFormatEnum) -> DmgSurfaceRenderer{
+        let surface = Surface::new(160, 144, format).unwrap();
+        let colors: [Color;4] = [
+            Color{r: 255, g:255, b:255, a: 0},
+            Color{r: 170, g:170, b:170, a: 0},
+            Color{r: 85,  g:85,  b: 85, a: 0},
+            Color{r: 0,   g:0,   b: 0,  a: 0},
+        ];
+        DmgSurfaceRenderer{
+            surface,
+            colors
+        }
+    }
 
-    let mut x = 0;
-    for pixelpack in buffer.pixeldata{
-        for sub_pixel in 0..4{
-            canvas.set_draw_color(colors[((pixelpack >> (2 * sub_pixel))&0b11) as usize]);
-            // canvas.draw_point(Point::new(x, y as i32)).unwrap();
-            canvas.draw_rect(Rect::new(
-                x * scale as i32, 
-                y as i32 * scale as i32, 
-                scale, scale)).unwrap();
-            x += 1
+    fn draw_line(&mut self, buffer: &ScanlineBuffer, y: i32) { 
+        let mut x = 0;
+        for pixelpack in buffer.pixeldata{
+            for sub_pixel in 0..4{
+                self.surface.fill_rect(
+                    Rect::new(x, y, 1, 1),
+                    self.colors[((pixelpack >> (2 * sub_pixel))&0b11) as usize]
+                ).unwrap();
+                x += 1
+            }
         }
     }
 }
@@ -119,7 +129,7 @@ fn main() {
         }
     }
 
-    let scale = 2;
+    let scale = 4;
 
     // SDL stuff
     let context = sdl2::init().unwrap();
@@ -155,16 +165,18 @@ fn main() {
         .build()
         .unwrap();
     let mut event_pump = context.event_pump().unwrap();
-    let mut canvas = window.into_canvas().build().unwrap();
+    let mut canvas = window.into_canvas()
+        .accelerated()
+        .build()
+        .unwrap();
     canvas.clear();
     canvas.present();
 
+    let mut surfaceBuffer = DmgSurfaceRenderer::new(canvas.default_pixel_format());
+    let tc = canvas.texture_creator();
     let mut framecount = 0;
     let mut timer = Instant::now();
     let mut quit = false;
-    let mut start_instant = Instant::now();
-    let frametime = Duration::new(0, 15466666);
-    // let frametime = Duration::new(0, 14166666);
     let mut buf = Vec::<i8>::new();
     loop {
         while audio_queue.size() > 512 {
@@ -178,16 +190,18 @@ fn main() {
                 audio_queue.queue(&buf);
                 buf.clear();
             }
-            
-            // println!("queued audio");
         }
 
         // if there is a pending line to draw
         if dmg.ppu.as_ref().borrow().line_pending {
-            let y = dmg.ppu.as_ref().borrow().line_y;
-            dmg.ppu.as_ref().borrow_mut().line_pending = false;
-            draw_line(&mut canvas, y, &dmg.ppu.as_ref().borrow().line_buffer, scale);
+            let mut ppu = dmg.ppu.as_ref().borrow_mut();
+            let y = ppu.line_y - 1;
+            ppu.line_pending = false;
+            surfaceBuffer.draw_line(&ppu.line_buffer, y as i32);
+            drop(ppu);
             if y == 143 {
+                let tex = tc.create_texture_from_surface(&surfaceBuffer.surface).unwrap();
+                canvas.copy(&tex, None, None).unwrap();
                 canvas.present();
                 framecount += 1;
                 if framecount == 100 {
@@ -216,10 +230,6 @@ fn main() {
                         _ => {}
                     }
                 }
-                // if start_instant.elapsed() < frametime{
-                //     ::std::thread::sleep(frametime - start_instant.elapsed());
-                // }
-                // start_instant = Instant::now();
             }
         }
         
