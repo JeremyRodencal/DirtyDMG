@@ -149,46 +149,12 @@ impl Apu {
             else {
                 self.sample_ticks = 0;
 
-                // TODO Extract to a separate sample function.
                 // TODO mix all channels.
                 // TODO respect left and right outputs.
-                let mut ch2 = 0i8;
-                if self.ch2.enabled{
-                    let volume = self.ch2.current_volume;
-                    let mut amp = volume as i8 * 2;
-                    let output = self.ch2.output;
-                    if output == 0 { 
-                        amp *= -1;
-                    }
-                    ch2 = amp;
-                }
-                let mut ch1 = 0i8;
-                if self.ch1.enabled{
-                    let volume = self.ch1.current_volume;
-                    let mut amp = volume as i8 * 2;
-                    let output = self.ch1.output;
-                    if output == 0 { 
-                        amp *= -1;
-                    }
-                    ch1 = amp;
-                }
-
-                let mut ch4 = 0i8;
-                if self.ch4.enabled{
-                    let volume = self.ch4.current_volume;
-                    let mut amp = volume as i8 * 2;
-                    let output = self.ch4.output;
-                    if output == 0 { 
-                        amp *= -1;
-                    }
-                    ch4 = amp;
-                    // println!("Channel 4 sample: {}", ch4);
-                }
-
-                let mut ch3 = 0i8;
-                if self.ch3.enabled{
-                    ch3 = self.ch3.output;
-                }
+                let ch1 = self.ch1.sample();
+                let ch2 = self.ch2.sample();
+                let ch3 = self.ch3.sample();
+                let ch4 = self.ch4.sample();
 
                 let mut samp = 0
                                 + ch1 as i16 

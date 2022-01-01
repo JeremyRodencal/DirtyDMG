@@ -209,4 +209,15 @@ impl Channel4 {
             }
         }
     }
+
+    pub fn sample(&self) -> i8 {
+        let mut sample = 0i8;
+        if self.enabled{
+            sample = self.current_volume as i8 * 2;
+            if self.output == 0 { 
+                sample *= -1;
+            }
+        }
+        sample
+    }
 }
