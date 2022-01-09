@@ -193,8 +193,10 @@ impl Apu {
 
     fn enable_disable_audio(&mut self, enabled: bool) {
         if !enabled {
+            self.ch1.clear();
             self.ch2.clear();
-            // TODO clear other channels.
+            self.ch3.clear();
+            self.ch4.clear();
         } else {
             self.ctrl.nr52 |= 0xF;
         }

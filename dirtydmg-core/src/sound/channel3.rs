@@ -53,6 +53,16 @@ impl Channel3 {
         self.nr32 = 0;
         self.nr33 = 0;
         self.nr34 = 0;
+
+        self.length_counter = 0;
+        self.freq_counter_mod = 0;
+        self.freq_counter = 0;
+
+        self.sample_index = 0;
+
+        self.output = 0;
+        self.current_volume = 0;
+        self.enabled = false;
     }
 
     pub fn sound_enabled(&self) -> bool{

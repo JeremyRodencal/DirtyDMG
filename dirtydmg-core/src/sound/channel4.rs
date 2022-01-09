@@ -43,6 +43,14 @@ impl Channel4 {
         self.nr42 = 0;
         self.nr43 = 0;
         self.nr44 = 0;
+        self.length_counter = 0;
+        self.envelope_counter = 0;
+        self.freq_counter_mod = 0;
+        self.freq_counter = 0;
+        self.lfsr = 0;
+        self.output = 0;
+        self.current_volume = 0;
+        self.enabled = false;
     }
 
     pub fn length(&self) -> u8 {

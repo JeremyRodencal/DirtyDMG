@@ -44,6 +44,14 @@ impl Channel2 {
         self.nr22 = 0;
         self.nr23 = 0;
         self.nr24 = 0;
+        self.enabled = false;
+        self.length_counter = 0;
+        self.envelope_counter = 0;
+        self.freq_counter_mod = 0;
+        self.freq_counter = 0;
+        self.duty_pos = 0;
+        self.output = 0;
+        self.current_volume = 0;
     }
 
     pub fn duty(&self) -> u8{

@@ -50,6 +50,17 @@ impl Channel1 {
         self.nr12 = 0;
         self.nr13 = 0;
         self.nr14 = 0;
+
+        self.length_counter = 0;
+        self.envelope_counter = 0;
+        self.freq_counter_mod = 0;
+        self.freq_counter = 0;
+        self.freq_shadow =0;
+        self.duty_pos = 0;
+        self.output = 0;
+        self.current_volume = 0;
+        self.sweep_counter = 0;
+        self.enabled = false;
     }
 
     fn sweep_period(&self) -> i8{
