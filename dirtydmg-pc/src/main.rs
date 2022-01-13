@@ -150,7 +150,7 @@ fn main() {
 
     let desired_spec = AudioSpecDesired {
         freq: Some(44100),
-        channels: Some(1),  // mono
+        channels: Some(2),  // stereo
         samples: Some(512)       // default sample size
     };
     let audio_queue:AudioQueue<i8> = audio.open_queue(
@@ -180,13 +180,14 @@ fn main() {
     let mut buf = Vec::<i8>::new();
     loop {
         while audio_queue.size() > 512 {
-            std::thread::sleep_ms(1);
+           std::thread::sleep_ms(1);
         }
         dmg.update();
 
-        if let Some((left, _right)) = dmg.apu.as_ref().borrow_mut().get_sample() {
+        if let Some((left, right)) = dmg.apu.as_ref().borrow_mut().get_sample() {
             buf.push(left);
-            if buf.len() >= 128{
+            buf.push(right);
+            if buf.len() >= 512 {
                 audio_queue.queue(&buf);
                 buf.clear();
             }

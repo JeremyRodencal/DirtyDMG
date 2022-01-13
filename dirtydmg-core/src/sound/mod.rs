@@ -131,6 +131,63 @@ impl Apu {
         }
     }
 
+    fn generate_sample(&mut self){
+        let mut left = 0i16;
+        let mut right = 0i16;
+
+        if self.ctrl.is_channel_on_output(AudioOutput::Output1, AudioChannel::Channel1)
+        {
+            left += self.ch1.sample() as i16;
+        }
+        if self.ctrl.is_channel_on_output(AudioOutput::Output2, AudioChannel::Channel1)
+        {
+            right += self.ch1.sample() as i16;
+        }
+
+        if self.ctrl.is_channel_on_output(AudioOutput::Output1, AudioChannel::Channel2)
+        {
+            left += self.ch2.sample() as i16;
+        }
+        if self.ctrl.is_channel_on_output(AudioOutput::Output2, AudioChannel::Channel2)
+        {
+            right += self.ch2.sample() as i16;
+        }
+
+        if self.ctrl.is_channel_on_output(AudioOutput::Output1, AudioChannel::Channel3)
+        {
+            left += self.ch3.sample() as i16;
+        }
+        if self.ctrl.is_channel_on_output(AudioOutput::Output2, AudioChannel::Channel3)
+        {
+            right += self.ch3.sample() as i16;
+        }
+
+        if self.ctrl.is_channel_on_output(AudioOutput::Output1, AudioChannel::Channel4)
+        {
+            left += self.ch4.sample() as i16;
+        }
+        if self.ctrl.is_channel_on_output(AudioOutput::Output2, AudioChannel::Channel4)
+        {
+            right += self.ch4.sample() as i16;
+        }
+
+        // TODO respect volume register
+
+        fn trim(samp: i8) -> i8{
+            if samp > 127{
+                127
+            }
+            else if samp < -128 {
+                -128
+            }
+            else {
+                samp
+            }
+        }
+
+        self.sample = Some((trim(left as i8), trim(right as i8)));
+    }
+
     fn sample_tick(&mut self) {
         // Increment ticks
         self.sample_ticks += 1;
@@ -148,28 +205,7 @@ impl Apu {
             // No subtick overflow to delay for. Take a sample.
             else {
                 self.sample_ticks = 0;
-
-                // TODO mix all channels.
-                // TODO respect left and right outputs.
-                let ch1 = self.ch1.sample();
-                let ch2 = self.ch2.sample();
-                let ch3 = self.ch3.sample();
-                let ch4 = self.ch4.sample();
-
-                let mut samp = 0
-                                + ch1 as i16 
-                                + ch2 as i16 
-                                + ch3 as i16
-                                + ch4 as i16
-                                ;
-                if samp > 127{
-                    samp = 127;
-                }
-                if samp < -128 {
-                    samp = -128;
-                }
-                let samp = samp as i8;
-                self.sample = Some((samp, samp));
+                self.generate_sample();
             }
         }
     }
@@ -225,15 +261,19 @@ impl BusRW for Apu {
 
             // Channel 2
             Apu::NR21_ADDRESS => {
+                // println!("NR21: {:#02X}", value);
                 self.ch2.nr21 = value;
             }
             Apu::NR22_ADDRESS => {
+                // println!("NR22: {:#02X}", value);
                 self.ch2.nr22 = value;
             }
             Apu::NR23_ADDRESS => {
+                // println!("NR23: {:#02X}", value);
                 self.ch2.update_nr23(value);
             }
             Apu::NR24_ADDRESS => {
+                // println!("NR24: {:#02X}", value);
                 self.ch2.update_nr24(value)
             }
 
@@ -270,12 +310,15 @@ impl BusRW for Apu {
 
             /* Control Registers */
             Apu::NR50_ADDRESS => {
+                // println!("NR50: {:#02X}", value);
                 self.ctrl.nr50 = value;
             }
             Apu::NR51_ADDRESS => {
+                // println!("NR51: {:#02X}", value);
                 self.ctrl.nr51 = value;
             }
             Apu::NR52_ADDRESS => {
+                // println!("NR52: {:#02X}", value);
                 self.ctrl.nr52 = value;
                 // Handle audio enable or disable based on the bit.
                 let enabled = value & ApuControl::NR52_AUDIO_ENABLED_BITMASK != 0;
