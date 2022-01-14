@@ -123,12 +123,12 @@ impl Channel1 {
 
     pub fn update_nr13(&mut self, value: u8){
         self.nr13 = value;
-        // self.update_freq();
+        self.freq_counter_mod = (2048 - self.freq()) * 4;
     }
 
     pub fn update_nr14(&mut self, value: u8){
         self.nr14 = value & 0b1100_0111;
-        // self.update_freq();
+        self.freq_counter_mod = (2048 - self.freq()) * 4;
         if value & 0x80 != 0{
             self.trigger();
         }
