@@ -68,6 +68,9 @@ impl CartInfo{
             0x02 => {info.mapper = MapperType::Mbc1;},
             0x03 => {info.mapper = MapperType::Mbc1;
                      info.battery = true},
+            0x05 => {info.mapper = MapperType::Mbc2;},
+            0x06 => {info.mapper = MapperType::Mbc2;
+                     info.battery = true},
             0x13 => {info.mapper = MapperType::Mbc3;
                      info.battery = true},
             0x1B => {info.mapper = MapperType::Mbc5;
@@ -106,6 +109,10 @@ impl CartInfo{
                 return Err(format!("Unsupported cartrige ram size: {:02X}", value).to_owned());
             }
         };
+        // Special case for MBC2 mapper with integrated RAM
+        if let MapperType::Mbc2 = info.mapper{
+            info.ram_size = 512;
+        }
 
         return Ok(info);
     }
@@ -173,6 +180,9 @@ impl Cartrige {
                 MapperType::Mbc1 => {
                     Box::new(mbc1::Mbc1Cart::new())
                 },
+                MapperType::Mbc2 => {
+                    Box::new(mbc2::Mbc2Cart::new())
+                }
                 MapperType::Mbc3 => {
                     Box::new(mbc3::Mbc3Cart::new())
                 }
@@ -727,7 +737,7 @@ mod mbc2 {
 
         fn update_rom_bank_offset(&mut self, mut bank: u8) {
             // Only use the lower 4 bank bits. Bank zero must become a 1.
-            bank &= 4;
+            bank &= 0xF;
             if bank == 0 {
                 bank += 1;
             }
@@ -751,7 +761,7 @@ mod mbc2 {
                 }
                 // Ram area
                 Mbc2Cart::RAM_START_ADDR..=Mbc2Cart::RAM_END_ADDR => {
-                    return ram[(addr & 0x1FF) - Mbc2Cart::RAM_START_ADDR];
+                    return ram[(addr - Mbc2Cart::RAM_START_ADDR ) & 0x1FF];
                 }
                 // For any other address, return 0xFF.
                 _ => {
@@ -789,7 +799,8 @@ mod mbc2 {
 
                 // Should not ever happen
                 _ => {
-                    panic!("Write to unknown address in MBC1 cart {:#4X}", addr);
+                    println!("Write to unknown address in MBC2 cart {:#4X}", addr);
+                    // panic!("Write to unknown address in MBC2 cart {:#4X}", addr);
                 }
             }
         }
