@@ -16,6 +16,7 @@ use sdl2::joystick::*;
 use dirtydmg_core::dmg::Dmg;
 use dirtydmg_core::input::Button;
 use dirtydmg_core::interface::ScanlineBuffer;
+use dirtydmg_core::sound::AudioChannel;
 
 fn load_file(filepath: &str) -> Result<Vec<u8>, std::io::Error>
 {
@@ -71,6 +72,7 @@ impl DmgSurfaceRenderer{
 }
 
 fn terrible_input_proc(dmg: &mut Dmg, key:Keycode, pressed:bool){
+    // Emulator button processing
     let btn = match key {
         Keycode::Z => {Some(Button::B)}
         Keycode::X => {Some(Button::A)}
@@ -84,6 +86,20 @@ fn terrible_input_proc(dmg: &mut Dmg, key:Keycode, pressed:bool){
     };
     if let Some(b) = btn {
         dmg.input(b, pressed);
+    }
+
+    if pressed == true{
+        // UI processing
+        let channel_toggle = match key {
+            Keycode::Num1 => {Some(AudioChannel::Channel1)}
+            Keycode::Num2 => {Some(AudioChannel::Channel2)}
+            Keycode::Num3 => {Some(AudioChannel::Channel3)}
+            Keycode::Num4 => {Some(AudioChannel::Channel4)}
+            _ => None
+        };
+        if let Some(x) = channel_toggle{
+            dmg.apu.borrow_mut().user_set_channel_enable_toggle(x);
+        }
     }
 }
 

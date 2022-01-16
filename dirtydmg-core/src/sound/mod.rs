@@ -40,6 +40,7 @@ pub struct Apu {
     sample_subtick_rate: u16,
 
     sample: Option<(i8, i8)>,
+    ch_user_enable: [bool;4],
 }
 
 impl Apu {
@@ -95,6 +96,7 @@ impl Apu {
             sample_subtick_rate: 11025,
             subtick_counter: 0,
             sample: None,
+            ch_user_enable: [true;4],
         }
     }
 
@@ -135,40 +137,48 @@ impl Apu {
         let mut left = 0i16;
         let mut right = 0i16;
 
-        if self.ctrl.is_channel_on_output(AudioOutput::Output1, AudioChannel::Channel1)
-        {
-            left += self.ch1.sample() as i16;
-        }
-        if self.ctrl.is_channel_on_output(AudioOutput::Output2, AudioChannel::Channel1)
-        {
-            right += self.ch1.sample() as i16;
-        }
-
-        if self.ctrl.is_channel_on_output(AudioOutput::Output1, AudioChannel::Channel2)
-        {
-            left += self.ch2.sample() as i16;
-        }
-        if self.ctrl.is_channel_on_output(AudioOutput::Output2, AudioChannel::Channel2)
-        {
-            right += self.ch2.sample() as i16;
+        if self.ch_user_enable[AudioChannel::Channel1 as usize]{
+            if self.ctrl.is_channel_on_output(AudioOutput::Output1, AudioChannel::Channel1)
+            {
+                left += self.ch1.sample() as i16;
+            }
+            if self.ctrl.is_channel_on_output(AudioOutput::Output2, AudioChannel::Channel1)
+            {
+                right += self.ch1.sample() as i16;
+            }
         }
 
-        if self.ctrl.is_channel_on_output(AudioOutput::Output1, AudioChannel::Channel3)
-        {
-            left += self.ch3.sample() as i16;
-        }
-        if self.ctrl.is_channel_on_output(AudioOutput::Output2, AudioChannel::Channel3)
-        {
-            right += self.ch3.sample() as i16;
+        if self.ch_user_enable[AudioChannel::Channel2 as usize]{
+            if self.ctrl.is_channel_on_output(AudioOutput::Output1, AudioChannel::Channel2)
+            {
+                left += self.ch2.sample() as i16;
+            }
+            if self.ctrl.is_channel_on_output(AudioOutput::Output2, AudioChannel::Channel2)
+            {
+                right += self.ch2.sample() as i16;
+            }
         }
 
-        if self.ctrl.is_channel_on_output(AudioOutput::Output1, AudioChannel::Channel4)
-        {
-            left += self.ch4.sample() as i16;
+        if self.ch_user_enable[AudioChannel::Channel3 as usize]{
+            if self.ctrl.is_channel_on_output(AudioOutput::Output1, AudioChannel::Channel3)
+            {
+                left += self.ch3.sample() as i16;
+            }
+            if self.ctrl.is_channel_on_output(AudioOutput::Output2, AudioChannel::Channel3)
+            {
+                right += self.ch3.sample() as i16;
+            }
         }
-        if self.ctrl.is_channel_on_output(AudioOutput::Output2, AudioChannel::Channel4)
-        {
-            right += self.ch4.sample() as i16;
+
+        if self.ch_user_enable[AudioChannel::Channel4 as usize]{
+            if self.ctrl.is_channel_on_output(AudioOutput::Output1, AudioChannel::Channel4)
+            {
+                left += self.ch4.sample() as i16;
+            }
+            if self.ctrl.is_channel_on_output(AudioOutput::Output2, AudioChannel::Channel4)
+            {
+                right += self.ch4.sample() as i16;
+            }
         }
 
         // TODO respect volume register
@@ -236,6 +246,15 @@ impl Apu {
         } else {
             self.ctrl.nr52 |= 0xF;
         }
+    }
+
+    pub fn user_set_channel_enable(&mut self, channel: AudioChannel, enabled: bool){
+        self.ch_user_enable[channel as usize] = enabled;
+    }
+
+    pub fn user_set_channel_enable_toggle(&mut self, channel: AudioChannel){
+        let channel = channel as usize;
+        self.ch_user_enable[channel as usize] = !self.ch_user_enable[channel as usize];
     }
 }
 
