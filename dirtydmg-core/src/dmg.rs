@@ -87,6 +87,14 @@ impl Dmg {
         self.cart.as_ref().borrow_mut().load_rom(data)
     }
 
+    pub fn load_sram(&mut self, data: &[u8]){
+        self.cart.as_ref().borrow_mut().load_ram(data);
+    }
+
+    pub fn get_sram(&self, buffer: &mut Vec<u8>){
+        self.cart.as_ref().borrow_mut().get_ram(buffer);
+    }
+
     pub fn update(&mut self) {
 
         self.cpu.handle_interrupts(&mut self.bus, &mut self.isr.as_ref().borrow_mut());

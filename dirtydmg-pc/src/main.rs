@@ -1,10 +1,12 @@
-use std::io::{ErrorKind};
+use std::borrow::BorrowMut;
+use std::io::{ErrorKind, Write};
 use std::io::Read;
 use std::fs;
 use std::time::{Instant, Duration};
 
 extern crate sdl2;
 
+use sdl2::libc::open;
 use sdl2::pixels::{Color, PixelFormatEnum};
 use sdl2::event::Event;
 use sdl2::rect::{Rect};
@@ -35,6 +37,36 @@ fn load_file(filepath: &str) -> Result<Vec<u8>, std::io::Error>
     rom_file.read_to_end(&mut rom_data).unwrap();
 
     return Ok(rom_data);
+}
+
+fn load_sram(filepath: &str) -> Result<Vec<u8>, std::io::Error>{
+    let mut ram_file = fs::File::open(filepath)?;
+    let meta = ram_file.metadata()?;
+
+    if meta.len() >  (1 * 1024 * 1024) {
+        return Err(std::io::Error::new(ErrorKind::Other, "ram file is too large."));
+    }
+
+    let mut ram_data: Vec<u8> = Vec::new();
+    let size = ram_file.read_to_end(&mut ram_data).unwrap_or(0);
+
+    if size == meta.len() as usize{
+        Ok(ram_data)
+    }
+    else {
+        Err(std::io::Error::new(ErrorKind::Other, "Failed to load sram data."))
+    }
+}
+
+fn save_sram(filepath: &str, data: &[u8]){
+    let mut sram_file = fs::OpenOptions::new()
+        .write(true)
+        .truncate(true)
+        .create(true)
+        .open(filepath);
+    if let Ok(mut sram_file) = sram_file{
+        sram_file.write_all(data).unwrap_or_default();
+    }
 }
 
 struct DmgSurfaceRenderer {
@@ -98,7 +130,7 @@ fn terrible_input_proc(dmg: &mut Dmg, key:Keycode, pressed:bool){
             _ => None
         };
         if let Some(x) = channel_toggle{
-            dmg.apu.borrow_mut().user_set_channel_enable_toggle(x);
+            dmg.apu.as_ref().borrow_mut().user_set_channel_enable_toggle(x);
         }
     }
 }
@@ -143,6 +175,12 @@ fn main() {
         Ok(x) => {
             dmg.load_rom(&x).unwrap();
         }
+    }
+
+    let ram_filepath = path.to_owned() + ".sram";
+    let ram_data = load_sram(&ram_filepath);
+    if let Ok(sram) = ram_data {
+        dmg.load_sram(&sram);
     }
 
     let scale = 4;
@@ -250,7 +288,12 @@ fn main() {
             }
         }
         
-        if quit{
+        if quit {
+            let mut sram = Vec::new();
+            dmg.get_sram(&mut sram);
+            if sram.len() > 0 {
+                save_sram(&ram_filepath, &sram);
+            }
             return;
         }
     }

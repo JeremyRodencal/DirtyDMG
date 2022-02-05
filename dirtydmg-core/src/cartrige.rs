@@ -198,6 +198,17 @@ impl Cartrige {
 
         return Ok(());
     }
+
+    pub fn load_ram(&mut self, sram: &[u8]) {
+        if sram.len() == self.ram.len(){
+            self.ram.clone_from_slice(sram)
+        }
+    }
+
+    pub fn get_ram(&self, buffer: &mut Vec<u8>) {
+        buffer.clear();
+        buffer.clone_from(&self.ram);
+    }
 }
 
 impl BusRW for Cartrige {
