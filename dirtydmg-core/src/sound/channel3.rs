@@ -190,8 +190,4 @@ impl BusRW for Channel3{
             _ => {0xFF}
         }
     }
-
-    // Garbage
-    fn bus_write16(&mut self, _:usize, _:u16){ }
-    fn bus_read16(&mut self, _:usize) -> u16{ 0 }
 }

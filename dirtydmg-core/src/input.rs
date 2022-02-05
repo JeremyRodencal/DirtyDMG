@@ -99,8 +99,4 @@ impl BusRW for Gamepad{
             self.dpad_active = false;
         }
     }
-
-    // These are not practical, just here to satisfy the trait.
-    fn bus_read16(&mut self, _addr: usize) -> u16{0}
-    fn bus_write16(&mut self, _addr: usize, _val: u16){}
 }

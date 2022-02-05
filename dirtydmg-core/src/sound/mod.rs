@@ -433,10 +433,6 @@ impl BusRW for Apu {
             _ => {0xFF}
         }
     }
-
-    // Just satisfies trait.
-    fn bus_write16(&mut self, _:usize, _:u16){}
-    fn bus_read16(&mut self, _:usize) -> u16{panic!("APU 16 bit bus read should never happen")}
 }
 
 mod test{

@@ -90,11 +90,6 @@ impl BusRW for SerialUnit {
         }
     }
 
-    fn bus_write16(&mut self, addr:usize, value:u16) {
-        self.bus_write8(addr, value as u8);
-        self.bus_write8(addr+1, (value >> 8) as u8);
-    }
-
     fn bus_read8(&mut self, addr:usize) -> u8 {
         match addr {
             SB_REG_ADDR => {
@@ -107,11 +102,6 @@ impl BusRW for SerialUnit {
                 panic!("SerialUnit unexpected read at address: {}", addr);
             }
         }
-    }
-
-    fn bus_read16(&mut self, addr:usize) -> u16 {
-        self.bus_read8(addr) as u16 | 
-        ((self.bus_read8(addr+1) as u16) << 8) 
     }
 }
 

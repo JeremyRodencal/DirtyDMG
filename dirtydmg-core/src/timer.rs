@@ -119,16 +119,6 @@ impl BusRW for TimerUnit {
             _ => {panic!("TimerUnit: Unknown read at address {:#X}", addr);}
         }
     }
-
-    fn bus_write16(&mut self, addr:usize, value:u16) {
-        self.bus_write8(addr, value as u8);
-        self.bus_write8(addr+1, (value >> 8) as u8);
-    }
-
-    fn bus_read16(&mut self, addr:usize) -> u16 {
-        self.bus_read8(addr) as u16 | 
-        ((self.bus_read8(addr+1) as u16) << 8) 
-    }
 }
 
 #[cfg(test)]

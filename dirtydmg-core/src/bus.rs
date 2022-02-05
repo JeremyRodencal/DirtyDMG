@@ -4,11 +4,19 @@ use std::cell::RefCell;
 // A trait that lets data be written and read from an address.
 pub trait BusRW{
     fn bus_write8(&mut self, addr:usize, value:u8);
-    // TODO delete
-    fn bus_write16(&mut self, addr:usize, value:u16);
     fn bus_read8(&mut self, addr:usize) -> u8;
-    // TODO delete
-    fn bus_read16(&mut self, addr:usize) -> u16;
+
+    /// Default 16bit read implementation made of 2 8 bit reads.
+    fn bus_read16(&mut self, addr: usize) -> u16 {
+        let high_byte = self.bus_read8(addr + 1) as u16;
+        (high_byte << 8) | (self.bus_read8(addr) as u16)
+    }
+
+    /// Default 16bit write implementation made of 2 8 bit writes.
+    fn bus_write16(&mut self, addr: usize, value: u16){
+        self.bus_write8(addr, value as u8 & 0xFF);
+        self.bus_write8(addr + 1, (value >> 8) as u8);
+    }
 }
 
 // An item to encapsulate a device attached to a bus.
@@ -85,22 +93,11 @@ impl BusRW for Bus {
         }
     }
 
-    fn bus_write16(&mut self, addr:usize, value:u16)
-    {
-        self.bus_write8(addr,   (value & 0xFF) as u8);
-        self.bus_write8(addr+1, (value >> 8) as u8);
-    }
-
     fn bus_read8(&mut self, addr:usize) -> u8
     {
         match self.get_item(addr){
             Some(x) => x.bus_read8(addr),
             None => 0xff
         }
-    }
-
-    fn bus_read16(&mut self, addr:usize) -> u16
-    {
-        self.bus_read8(addr) as u16 | ((self.bus_read8(addr+1) as u16) << 8)
     }
 }

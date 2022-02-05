@@ -133,17 +133,6 @@ impl BusRW for InterruptStatus {
             }
         }
     }
-
-    /// 16 bit reads are not supported for InterruptStatus.
-    fn bus_read16(&mut self, addr: usize) -> u16 {
-        panic!("Interrupt status bus fault reading from {:04X}", addr);
-    }
-
-    /// 16 bit writes are not supported for InterruptStatus.
-    fn bus_write16(&mut self, addr: usize, _value: u16) {
-        panic!("Interrupt status bus fault writing to {:04X}", addr);
-    }
-
 }
 
 #[cfg(test)]

@@ -22,18 +22,8 @@ impl BusRW for Ram {
 		self.storage[addr - self.start]
 	}
 
-	fn bus_read16(&mut self, addr:usize) -> u16
-	{
-		LittleEndian::read_u16(&self.storage[addr - self.start..])
-	}
-
 	fn bus_write8(&mut self, addr:usize, value:u8)
 	{
 		self.storage[addr - self.start] = value;
-	}
-
-	fn bus_write16(&mut self, addr:usize, value:u16)
-	{
-		LittleEndian::write_u16(&mut self.storage[addr - self.start..], value);
 	}
 }

@@ -221,21 +221,6 @@ impl BusRW for Cartrige {
     {
         self.mapper.as_mut().write(&mut self.ram[..], &mut self.rom[..], addr as u16, value);
     }
-
-    fn bus_read16(&mut self, addr: usize) -> u16
-    {
-        let addr = addr as u16;
-        let mut value: u16 = self.mapper.as_mut().read(&mut self.ram[..], &mut self.rom[..], addr) as u16;
-        value |= (self.mapper.as_mut().read(&mut self.ram[..], &mut self.rom[..], addr+1) as u16) << 8;
-        return value;
-    }
-
-    fn bus_write16(&mut self, addr: usize, value: u16)
-    {
-        let addr = addr as u16;
-        self.mapper.as_mut().write(&mut self.ram[..], &mut self.rom[..], addr, (value & 0xFF) as u8);
-        self.mapper.as_mut().write(&mut self.ram[..], &mut self.rom[..], addr+1, (value >> 8) as u8);
-    }
 }
 
 struct RawCart { }
