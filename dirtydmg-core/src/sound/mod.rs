@@ -449,7 +449,6 @@ mod test{
         assert_eq!(apu.ch2.nr23, low_freq);
         assert_eq!(apu.ch2.freq(), low_freq as u16);
         assert_eq!(apu.ch2.freq_counter_mod, expected_freq);
-        assert_eq!(apu.ch2.freq_counter, expected_freq);
     }
 
     #[test]
@@ -463,7 +462,6 @@ mod test{
         assert_eq!(apu.ch2.nr24 & 0b111, high_freq);
         assert_eq!(apu.ch2.freq(), (high_freq as u16) << 8);
         assert_eq!(apu.ch2.freq_counter_mod, expected_freq);
-        assert_eq!(apu.ch2.freq_counter, expected_freq);
     }
 
     #[test]

@@ -89,7 +89,6 @@ impl Channel2 {
     pub fn update_freq(&mut self){
         let fmod = (2048 - self.freq()) * 4;
         self.freq_counter_mod = fmod;
-        self.freq_counter = fmod;
     }
 
     pub fn update_nr23(&mut self, value: u8){
@@ -111,6 +110,7 @@ impl Channel2 {
         self.enabled = true;     
         self.length_counter = 0;
         self.update_freq();
+        self.freq_counter = 0;
         self.envelope_counter = 0;
         self.current_volume = self.env_initial_vol();
     }
