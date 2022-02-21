@@ -112,7 +112,6 @@ impl Channel1 {
     pub fn update_freq(&mut self){
         let fmod = (2048 - self.freq()) * 4;
         self.freq_counter_mod = fmod;
-        self.freq_counter = fmod;
     }
 
     pub fn set_freq(&mut self, value:u16){
