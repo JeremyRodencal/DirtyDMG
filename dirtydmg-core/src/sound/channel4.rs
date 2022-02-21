@@ -85,6 +85,13 @@ impl Channel4 {
         (self.nr44 & 0b0100_0000) != 0
     }
 
+    pub fn update_nr42(&mut self, value: u8) {
+        self.nr42 = value;
+        if value >> 4 == 0 {
+            self.enabled = false;
+        }
+    }
+
     pub fn update_nr43(&mut self, value: u8) {
         self.nr43 = value;
         self.update_internal_freq_counters();
@@ -135,8 +142,7 @@ impl Channel4 {
     
     // Function to handle the enable "trigger" event.
     fn trigger(&mut self){
-        // Channel is enabled (see length counter).
-        self.enabled = true;     
+        self.enabled = self.env_initial_vol() != 0;
         self.length_counter = 0;
         self.envelope_counter = 0;
         self.current_volume = self.env_initial_vol();

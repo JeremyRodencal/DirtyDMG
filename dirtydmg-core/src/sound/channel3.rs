@@ -85,6 +85,18 @@ impl Channel3 {
         (self.nr34 & 0b0100_0000) != 0
     }
 
+    pub fn update_nr30(&mut self, value: u8){
+        // The only writable bit is the topmost bit.
+        self.nr30 = value & 0x80;
+
+        // The topmost bit controls DAC power. If the power is ever disabled,
+        // the channel is also disabled. Enabling the DAC does not re-enable the
+        // cahnnel though. Enabling the channel requires a new trigger event.
+        if self.nr30 == 0{
+            self.enabled = false;
+        }
+    }
+
     pub fn update_freq(&mut self){
         let fmod = (2048 - self.freq()) * 2;
         self.freq_counter_mod = fmod;
@@ -106,8 +118,8 @@ impl Channel3 {
     
     // Function to handle the enable "trigger" event.
     fn trigger(&mut self){
-        // Channel is enabled (see length counter).
-        self.enabled = true;     
+        // Enable the channel if the DAC is off.
+        self.enabled = self.sound_enabled();     
         self.length_counter = 0;
         self.update_freq();
         self.sample_index = 0;
@@ -116,7 +128,7 @@ impl Channel3 {
 
     pub fn tick(&mut self){
         // If the channel is currently enabled.
-        if self.enabled && self.sound_enabled() {
+        if self.enabled{
             // check for frequency pattern advance.
             if self.freq_counter > 0 {
                 self.freq_counter -= 1;

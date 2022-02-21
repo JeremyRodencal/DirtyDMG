@@ -269,7 +269,7 @@ impl BusRW for Apu {
                 self.ch1.nr11 = value;
             }
             Apu::NR12_ADDRESS => {
-                self.ch1.nr12 = value;
+                self.ch1.update_nr12(value);
             }
             Apu::NR13_ADDRESS => {
                 self.ch1.update_nr13(value);
@@ -285,7 +285,7 @@ impl BusRW for Apu {
             }
             Apu::NR22_ADDRESS => {
                 // println!("NR22: {:#02X}", value);
-                self.ch2.nr22 = value;
+                self.ch2.update_nr22(value);
             }
             Apu::NR23_ADDRESS => {
                 // println!("NR23: {:#02X}", value);
@@ -299,6 +299,7 @@ impl BusRW for Apu {
             // Channel 3
             Apu::NR30_ADDRESS => {
                 self.ch3.nr30 = value & 0x80;
+                self.ch3.update_nr30(value);
             }
             Apu::NR31_ADDRESS => {
                 self.ch3.nr31 = value;
@@ -318,7 +319,7 @@ impl BusRW for Apu {
                 self.ch4.nr41 = value
             }
             Apu::NR42_ADDRESS => {
-                self.ch4.nr42 = value
+                self.ch4.update_nr42(value);
             }
             Apu::NR43_ADDRESS => {
                 self.ch4.update_nr43(value)
@@ -467,6 +468,9 @@ mod test{
     #[test]
     fn channel2_freq_advance(){
         let mut apu = Apu::new();
+
+        // Enable DAC
+        apu.bus_write8(Apu::NR22_ADDRESS, 0xF0);
 
         // Maximum frequency
         apu.bus_write8(Apu::NR23_ADDRESS, 0xFF);

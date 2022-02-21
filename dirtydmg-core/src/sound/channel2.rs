@@ -90,6 +90,12 @@ impl Channel2 {
         let fmod = (2048 - self.freq()) * 4;
         self.freq_counter_mod = fmod;
     }
+    pub fn update_nr22(&mut self, value: u8){
+        self.nr22 = value;
+        if value >> 4 == 0 {
+            self.enabled = false;
+        }
+    }
 
     pub fn update_nr23(&mut self, value: u8){
         self.nr23 = value;
@@ -106,8 +112,8 @@ impl Channel2 {
     
     // Function to handle the enable "trigger" event.
     fn trigger(&mut self){
-        // Channel is enabled (see length counter).
-        self.enabled = true;     
+        // Channel is enabled (if volume is not zero)
+        self.enabled = self.env_initial_vol() != 0;     
         self.length_counter = 0;
         self.update_freq();
         self.freq_counter = 0;

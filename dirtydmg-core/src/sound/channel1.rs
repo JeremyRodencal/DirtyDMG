@@ -120,6 +120,13 @@ impl Channel1 {
         self.nr14 |= (value >> 8) as u8 & 0b111;
     }
 
+    pub fn update_nr12(&mut self, value: u8){
+        self.nr12 = value;
+        if self.nr12 >> 4 == 0 {
+            self.disable();
+        }
+    }
+
     pub fn update_nr13(&mut self, value: u8){
         self.nr13 = value;
         self.freq_counter_mod = (2048 - self.freq()) * 4;
@@ -140,7 +147,7 @@ impl Channel1 {
     // Function to handle the enable "trigger" event.
     fn trigger(&mut self){
         // Channel is enabled (see length counter).
-        self.enabled = true;     
+        self.enabled = self.env_initial_vol() != 0;     
         self.length_counter = 0;
         self.update_freq();
         self.freq_shadow = self.freq();
