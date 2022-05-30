@@ -417,7 +417,7 @@ impl PPU {
             if self.obj_enabled{
                 for line_sprite in line_sprites.iter().take(sprite_count){
                     let sprt = &self.sprites[*line_sprite as usize];
-                    if self.check_collision_sprite(scanline_index, &sprt){
+                    if self.check_collision_sprite(scanline_index, sprt){
                         sprite_behind = sprt.behind_background;
 
                         let mut tile_x = (scanline_index + TILE_DIMENSION as u8) - sprt.xpos;
