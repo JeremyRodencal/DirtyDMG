@@ -1,5 +1,4 @@
 use crate::bus::{BusRW};
-use byteorder::{ByteOrder, LittleEndian};
 
 // Plain old read write memory, no special actions.
 pub struct Ram {
@@ -10,7 +9,7 @@ pub struct Ram {
 impl Ram {
 	pub fn new(size:usize, start_address:usize) -> Ram {
 		Ram{
-			storage: vec![0 as u8;size],
+			storage: vec![0u8; size],
 			start: start_address
 		}
 	}

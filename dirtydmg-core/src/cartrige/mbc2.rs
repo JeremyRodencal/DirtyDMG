@@ -35,7 +35,9 @@ impl Mbc2Cart {
             is_ram_mode: false,
         };
         mapper.update_rom_bank_offset(1);
-        return mapper;
+        
+        // Return the mapper
+        mapper
     }
 
     fn update_rom_bank_offset(&mut self, mut bank: u8) {
@@ -56,15 +58,15 @@ impl MapperRW for Mbc2Cart {
         match addr {
             // Bank zero area
             Mbc2Cart::ROM_BANK_0_START_ADDR..=Mbc2Cart::ROM_BANK_0_END_ADDR => {
-                return rom[addr];
+                rom[addr]
             }
             // Switchable bank area
             Mbc2Cart::ROM_BANK_SWITCH_START_ADDR..=Mbc2Cart::ROM_BANK_SWITCH_END_ADDR => {
-                return rom[self.rom_offset + addr - Mbc2Cart::ROM_BANK_SWITCH_START_ADDR];
+                rom[self.rom_offset + addr - Mbc2Cart::ROM_BANK_SWITCH_START_ADDR]
             }
             // Ram area
             Mbc2Cart::RAM_START_ADDR..=Mbc2Cart::RAM_END_ADDR => {
-                return ram[(addr - Mbc2Cart::RAM_START_ADDR ) & 0x1FF];
+                ram[(addr - Mbc2Cart::RAM_START_ADDR ) & 0x1FF]
             }
             // For any other address, return 0xFF.
             _ => {

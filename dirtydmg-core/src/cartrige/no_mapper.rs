@@ -8,7 +8,7 @@ impl MapperRW for NoMapper {
         match addr {
             // Return values strait up if they are in the rom area.
             0x0000..=0x7FFF => {
-                return rom[addr as usize];
+                rom[addr as usize]
             }
             // For any other address, return 0xFF.
             _ => {

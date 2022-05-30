@@ -21,27 +21,28 @@ impl SerialUnit {
     const SC_MASTER_MASK:u8 = 0b0000_0010;
 
     fn is_transfer_active(&self) -> bool {
-        return (self.sc & SerialUnit::SC_ACTIVE_MASK) != 0;
+        (self.sc & SerialUnit::SC_ACTIVE_MASK) != 0
     }
 
     fn is_highspeed(&self) -> bool {
-        return (self.sc & SerialUnit::SC_SPEED_MASK) != 0;
+        (self.sc & SerialUnit::SC_SPEED_MASK) != 0
     }
 
     fn is_master(&self) -> bool {
-        return (self.sc & SerialUnit::SC_MASTER_MASK) != 0;
+        (self.sc & SerialUnit::SC_MASTER_MASK) != 0
     }
 
     /// # Read but do not clear the last output byte.
     pub fn peak_output(&self) -> Option<u8>{
-        return self.output;
+        self.output
     }
 
     /// # Read and clear the last output byte.
     pub fn get_output(&mut self) -> Option<u8>{
         let ret = self.output;
         self.output = None;
-        return ret;
+
+        ret
     }
 
     pub fn update(&mut self, cycles: u32, is:&mut InterruptStatus) {
@@ -105,12 +106,18 @@ impl BusRW for SerialUnit {
     }
 }
 
+impl Default for SerialUnit {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(test)]
 mod test{
     use super::*;
 
     fn get_test_pack() -> (SerialUnit, InterruptStatus){
-        let mut unit = SerialUnit::new();
+        let unit = SerialUnit::new();
         let mut is = InterruptStatus::new();
         is.isrmask = 0xFF;
         return (unit, is);

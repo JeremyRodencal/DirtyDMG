@@ -55,7 +55,7 @@ impl Dmg {
         bus.add_item(BusItem::new(0xFF0F, 0xFF0F, isr.clone()));
         bus.add_item(BusItem::new(0xFF10, 0xFF3F, apu.clone()));
         bus.add_item(BusItem::new(0xFF40, 0xFF4B, ppu.clone()));
-        bus.add_item(BusItem::new(0xFF80, 0xFFFE, zero_page.clone()));
+        bus.add_item(BusItem::new(0xFF80, 0xFFFE, zero_page));
         bus.add_item(BusItem::new(0xFFFF, 0xFFFF, isr.clone()));
 
         let mut cpu = Cpu::new();
@@ -103,12 +103,9 @@ impl Dmg {
         {
             let mut stu = self.stu.as_ref().borrow_mut();
             stu.update(cycles as u32, &mut self.isr.as_ref().borrow_mut());
-            match stu.get_output() {
-                Some(x) => {
-                    print!("{} ", x as char);
-                    stdout().flush().unwrap();
-                }
-                None => {}
+            if let Some(x) = stu.get_output() {
+                print!("{} ", x as char);
+                stdout().flush().unwrap();
             };
         }
         // Update the timer unit with cpu ticks (not machine cycles)
@@ -125,5 +122,11 @@ impl Dmg {
         } else {
             self.gamepad.as_ref().borrow_mut().release_btn(btn);
         }
+    }
+}
+
+impl Default for Dmg {
+    fn default() -> Self {
+        Self::new()
     }
 }

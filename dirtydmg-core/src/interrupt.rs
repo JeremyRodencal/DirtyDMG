@@ -80,27 +80,27 @@ impl InterruptStatus {
 
     /// Checks if the vblank interrupt is active
     pub fn is_vblank_active(&self) -> bool {
-        return self.isrreq & self.isrmask & InterruptStatus::VBLANK_MASK > 0;
+        self.isrreq & self.isrmask & InterruptStatus::VBLANK_MASK > 0
     }
 
     /// Checks if the lcdstat interrupt is active
     pub fn is_lcdstat_active(&self) -> bool {
-        return self.isrreq & self.isrmask & InterruptStatus::LCDSTAT_MASK > 0;
+        self.isrreq & self.isrmask & InterruptStatus::LCDSTAT_MASK > 0
     }
 
     /// Checks if the timer interrupt is active
     pub fn is_timer_active(&self) -> bool {
-        return self.isrreq & self.isrmask & InterruptStatus::TIMER_MASK > 0;
+        self.isrreq & self.isrmask & InterruptStatus::TIMER_MASK > 0
     }
 
     /// Checks if the serial interrupt is active
     pub fn is_serial_active(&self) -> bool {
-        return self.isrreq & self.isrmask & InterruptStatus::SERIAL_MASK > 0;
+        self.isrreq & self.isrmask & InterruptStatus::SERIAL_MASK > 0
     }
 
     /// Checks if the joypad interrupt is active
     pub fn is_joypad_active(&self) -> bool {
-        return self.isrreq & self.isrmask & InterruptStatus::JOYPAD_MASK > 0;
+        self.isrreq & self.isrmask & InterruptStatus::JOYPAD_MASK > 0
     }
 }
 
@@ -132,6 +132,12 @@ impl BusRW for InterruptStatus {
                 panic!("Interrupt status bus fault writing to {:04X}", addr);
             }
         }
+    }
+}
+
+impl Default for InterruptStatus {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

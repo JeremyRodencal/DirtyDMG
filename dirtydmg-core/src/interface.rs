@@ -16,4 +16,8 @@ impl ScanlineBuffer{
     }
 }
 
-
+impl Default for ScanlineBuffer {
+    fn default() -> Self {
+        Self::new()
+    }
+}

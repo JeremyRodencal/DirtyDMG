@@ -36,8 +36,6 @@ pub struct Apu {
 
     subtick_counter: u16,
     sample_ticks: u16,
-    sample_subticks: u16,
-    sample_subtick_rate: u16,
 
     sample: Option<(i8, i8)>,
     ch_user_enable: [bool;4],
@@ -92,8 +90,6 @@ impl Apu {
             frame_envelope_counter: 0,
             frame_sweep_counter: 0,
             sample_ticks: 95,
-            sample_subticks: 1201,
-            sample_subtick_rate: 11025,
             subtick_counter: 0,
             sample: None,
             ch_user_enable: [true;4],
@@ -183,7 +179,7 @@ impl Apu {
 
         // TODO respect volume register
 
-        fn trim(samp: i8) -> i8{
+        fn trim(samp: i16) -> i8{
             if samp > 127{
                 127
             }
@@ -191,11 +187,11 @@ impl Apu {
                 -128
             }
             else {
-                samp
+                samp as i8
             }
         }
 
-        self.sample = Some((trim(left as i8), trim(right as i8)));
+        self.sample = Some((trim(left), trim(right)));
     }
 
     fn sample_tick(&mut self) {
@@ -223,7 +219,8 @@ impl Apu {
     pub fn get_sample(&mut self) -> Option<(i8, i8)>{
         let sample = self.sample;
         self.sample = None;
-        return sample;
+
+        sample
     }
 
     pub fn tick(&mut self, ticks:u16){
@@ -436,6 +433,14 @@ impl BusRW for Apu {
     }
 }
 
+impl Default for Apu {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+
+#[cfg(test)]
 mod test{
     use super::*;
 

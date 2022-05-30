@@ -176,10 +176,8 @@ impl Channel2 {
                 if self.current_volume < 15{
                     self.current_volume += 1;
                 }
-            } else {
-                if self.current_volume != 0 {
-                    self.current_volume -= 1;
-                }
+            } else if self.current_volume != 0 {
+                self.current_volume -= 1;
             }
         }
     }
@@ -193,5 +191,11 @@ impl Channel2 {
             }
         }
         sample
+    }
+}
+
+impl Default for Channel2 {
+    fn default() -> Self {
+        Self::new()
     }
 }

@@ -264,7 +264,7 @@ impl PPU {
 
     /// Checks if a DMA transfer is currently executing.
     fn dma_active(&self) -> bool{
-        return self.oam_dma_ticks != 0;
+        self.oam_dma_ticks != 0
     }
 
     fn update_dma(&mut self, ticks:u16, bus:&mut impl BusRW){
@@ -287,9 +287,7 @@ impl PPU {
     /// Computes the correct tileset index for a given map value.
     fn calc_tileset_index(&self, tiledata: u8) -> usize{
         if self.bg_window_signed_addressing {
-            let val = (TILESET_HIGH_BASE_INDEX + (tiledata as i8 as isize)) as usize;
-            // println!("tileindex {}", val);
-            val
+            (TILESET_HIGH_BASE_INDEX + (tiledata as i8 as isize)) as usize
         } else {
             tiledata as usize
         }
@@ -336,9 +334,9 @@ impl PPU {
     fn draw_line(&mut self) {
         // Used to hold pixel data.
         let mut pixel_block:u8 = 0;
-        let mut sprite_pixel = 0u8;
+        let mut sprite_pixel:u8;
         let mut bg_pixel = 0u8;
-        let mut sprite_behind = true;
+        let mut sprite_behind:bool;
         let mut bg_trans = false;
 
         ////BG rendering data////
@@ -417,11 +415,8 @@ impl PPU {
             sprite_behind = true;
             sprite_pixel = 4;
             if self.obj_enabled{
-                let mut sprite_list_position = 0;
-
-                for line_sprite_index in 0..sprite_count{
-                // while let Some(sprt_list_index) = self.find_collision_sprite(scanline_index, &line_sprites[sprite_list_position..], sprite_count){
-                    let sprt = &self.sprites[line_sprites[line_sprite_index] as usize];
+                for line_sprite in line_sprites.iter().take(sprite_count){
+                    let sprt = &self.sprites[*line_sprite as usize];
                     if self.check_collision_sprite(scanline_index, &sprt){
                         sprite_behind = sprt.behind_background;
 
@@ -473,18 +468,16 @@ impl PPU {
                 if sprite_behind && !bg_trans{
                     bg_pixel
                 } 
+                else if sprite_pixel != 4{
+                    sprite_pixel
+                }
                 else {
-                    if sprite_pixel != 4{
-                        sprite_pixel
-                    }
-                    else {
-                        bg_pixel
-                    }
+                    bg_pixel
                 };
             pixel_block |= pixel << 6;
 
             // If we have completed a pixel block
-            if scanline_index + 1 & 0b11 == 0{
+            if (scanline_index + 1) & 0b11 == 0{
                 // update the scanline buffer.
                 self.line_buffer.pixeldata[(scanline_index/4) as usize] = pixel_block;
             }
@@ -512,10 +505,8 @@ impl PPU {
                 self.tick_counter -= PPU::LCD_TICKS_PER_LINE;
                 self.line_y += 1;
                 self.line_compare = self.line_compare_value == self.line_y;
-                if self.line_compare {
-                    if self.line_compare_is {
-                        is.request_lcdstat();
-                    }
+                if self.line_compare && self.line_compare_is {
+                    is.request_lcdstat();
                 }
 
                 // if start of vblank
@@ -534,10 +525,8 @@ impl PPU {
                 if self.line_y > PPU::LCD_LINE_VBLANK_END {
                     self.line_y = 0;
                     self.line_compare = self.line_compare_value == self.line_y;
-                    if self.line_compare {
-                        if self.line_compare_is {
-                            is.request_lcdstat();
-                        }
+                    if self.line_compare && self.line_compare_is {
+                        is.request_lcdstat();
                     }
                     self.mode = Mode::SpriteSearch;
                 }
@@ -825,6 +814,12 @@ impl BusRW for PPU{
     }
 }
 
+impl Default for PPU {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -886,7 +881,7 @@ mod test {
     }
 
     fn test_pack() -> (PPU, Ram, InterruptStatus){
-        let mut ppu = PPU::new();
+        let ppu = PPU::new();
         let is = InterruptStatus::new();
         let ram = Ram::new(0x10000, 0);
         (ppu, ram, is)
@@ -1032,9 +1027,6 @@ mod test {
         assert_eq!(ppu.line_compare_is, false);
     }
 
-    fn test_palette_rw(ppu:&mut PPU, palette:&Palette, address:usize){
-    }
-
     #[test]
     fn test_bg_palette_rw(){
         let address = 0xFF47;
@@ -1083,7 +1075,7 @@ mod test {
     }
 
     #[test]
-    fn test_dma_transfer_start_ticksAndAddr() {
+    fn test_dma_transfer_start_ticks_and_addr() {
         let mut ppu = PPU::new();
         let address = 0xFF46;
         let value = 45;
