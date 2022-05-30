@@ -100,3 +100,9 @@ impl BusRW for Gamepad{
         }
     }
 }
+
+impl Default for Gamepad {
+    fn default() -> Self {
+        Self::new()
+    }
+}

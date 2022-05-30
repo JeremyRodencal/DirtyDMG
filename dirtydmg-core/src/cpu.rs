@@ -115,6 +115,7 @@ impl Regs {
     }
 }
 
+#[allow(dead_code)]
 enum CpuMode {
     Running,
     Halted,
@@ -166,14 +167,14 @@ impl Cpu {
     pub fn read_mem_test(&mut self, bus:&mut impl BusRW, addr: usize)->u8
     {
         self.reg.a = bus.bus_read8(addr);
-        return self.reg.a
+        self.reg.a
     }
 
     fn read_pc(&mut self, bus:&mut impl BusRW) -> u8
     {
         let value = bus.bus_read8(self.reg.pc as usize);
         self.reg.pc += 1;
-        return value;
+        value
     }
 
     fn test_condition(&mut self, cond:JumpCondition) -> bool
@@ -214,12 +215,13 @@ impl Cpu {
             self.mode = CpuMode::Running;
         }
 
-        return started;
+        started
     }
 
     /// Checks for and handles pending interrupts
     /// 
     /// Returns the number of busy cycles if an ISR is started, or zero if no interrupt started.
+    #[allow(clippy::collapsible_if)]
     fn update_interrupts(&mut self, bus: &mut impl BusRW, is: &mut InterruptStatus) -> bool
     {
         let mut started:bool = false;
@@ -261,7 +263,7 @@ impl Cpu {
             }
         }
 
-        return started;
+        started
     }
 
     pub fn handle_interrupts(&mut self, bus: &mut impl BusRW, is: &mut InterruptStatus){
@@ -279,10 +281,9 @@ impl Cpu {
         {
             self.busy_cycles = Cpu::ISR_OVERHEAD_CYCLES as u32;
             self.isr_pending = false;
-        }
         // Not starting an interrupt.
-        else
-        {
+        } else { 
+        
             // Execute depending on the current cpu mode.
             match self.mode {
                 CpuMode::Running => {self.execute_instruction(bus);}
@@ -291,7 +292,7 @@ impl Cpu {
             }
         }
 
-        return self.busy_cycles as u8;
+        self.busy_cycles as u8
     }
 
     fn execute_instruction(&mut self, bus:&mut impl BusRW) -> u8
@@ -310,7 +311,7 @@ impl Cpu {
         // Execute the operation in the instruction
         // println!("[{:#0X},{:#0X},{:#0X}]{:?} @ {:#04X}", data[0], data[1], data[2], instruction.op, self.reg.pc);
         self.execute_operation(bus, &data, &instruction.op);
-        return self.busy_cycles as u8;
+        self.busy_cycles as u8
     }
 
     fn subc(&mut self, sub:u8){
@@ -354,7 +355,7 @@ impl Cpu {
             self.reg.f |= Regs::CARRY_FLAG;
         }
 
-        return result;
+        result
     }
 
     fn rr(&mut self, val: u8) -> u8{
@@ -370,7 +371,7 @@ impl Cpu {
             self.reg.f |= Regs::CARRY_FLAG;
         }
 
-        return result;
+        result
     }
 
     fn sla(&mut self, val: u8) -> u8 {
@@ -386,7 +387,7 @@ impl Cpu {
             self.reg.f |= Regs::CARRY_FLAG;
         }
 
-        return result;
+        result
     }
 
     fn sra(&mut self, val: u8) -> u8 {
@@ -402,7 +403,7 @@ impl Cpu {
             self.reg.f |= Regs::CARRY_FLAG;
         }
 
-        return result;
+        result
     }
 
     fn srl(&mut self, val: u8) -> u8 {
@@ -418,7 +419,7 @@ impl Cpu {
             self.reg.f |= Regs::CARRY_FLAG;
         }
 
-        return result;
+        result
     }
 
     fn bit(&mut self, val:u8, index:u8) {
@@ -563,10 +564,10 @@ impl Cpu {
                 // The addend was positive.
                 else {
                     if (initial ^ addend) & 0x10 != result & 0x10 {
-                        self.reg.f = self.reg.f | Regs::HCARRY_FLAG;
+                        self.reg.f |= Regs::HCARRY_FLAG;
                     }
                     if result & 0xFF < initial & 0xFF {
-                        self.reg.f = self.reg.f | Regs::CARRY_FLAG;
+                        self.reg.f |= Regs::CARRY_FLAG;
                     }
                 }
             },
@@ -578,15 +579,15 @@ impl Cpu {
                 self.reg.write8(*dst, result);
 
                 // Only the carry flag is retained.
-                self.reg.f = self.reg.f & Regs::CARRY_FLAG;
+                self.reg.f &= Regs::CARRY_FLAG;
 
                 // If there was a half carry
                 if (initial ^ result) & 0x10 > 0 {
-                    self.reg.f = self.reg.f | Regs::HCARRY_FLAG;
+                     self.reg.f |= Regs::HCARRY_FLAG;
                 }
                 // If the result was zero
                 if result == 0 {
-                    self.reg.f = self.reg.f | Regs::ZERO_FLAG;
+                    self.reg.f |= Regs::ZERO_FLAG;
                 }
             },
 
@@ -601,11 +602,11 @@ impl Cpu {
 
                 // If there was a half carry
                 if (initial ^ result) & 0x10 > 0 {
-                    self.reg.f = self.reg.f | Regs::HCARRY_FLAG;
+                    self.reg.f |= Regs::HCARRY_FLAG;
                 }
                 // If the result was zero
                 if result == 0 {
-                    self.reg.f = self.reg.f | Regs::ZERO_FLAG;
+                    self.reg.f |= Regs::ZERO_FLAG;
                 }
             },
             
@@ -690,11 +691,11 @@ impl Cpu {
 
                 // Half carry only occurs on most significant byte.
                 if (initial ^ addend) & 0x1000 != result & 0x1000 {
-                    self.reg.f = self.reg.f | Regs::HCARRY_FLAG;
+                    self.reg.f |= Regs::HCARRY_FLAG;
                 }
                 // Set carry flag if needed.
                 if result < initial {
-                    self.reg.f = self.reg.f | Regs::CARRY_FLAG;
+                    self.reg.f |= Regs::CARRY_FLAG;
                 }
             },
 
@@ -719,10 +720,10 @@ impl Cpu {
                 // The addend was positive.
                 else {
                     if (initial ^ addend) & 0x10 != result & 0x10 {
-                        self.reg.f = self.reg.f | Regs::HCARRY_FLAG;
+                        self.reg.f |= Regs::HCARRY_FLAG;
                     }
                     if result & 0xFF < initial & 0xFF {
-                        self.reg.f = self.reg.f | Regs::CARRY_FLAG;
+                        self.reg.f |= Regs::CARRY_FLAG;
                     }
                 }
             },
@@ -1220,7 +1221,7 @@ impl Cpu {
 
             Push{src} => {
                 self.reg.sp = self.reg.sp.wrapping_sub(2);
-                &bus.bus_write16(self.reg.sp as usize, self.reg.read16(*src));
+                bus.bus_write16(self.reg.sp as usize, self.reg.read16(*src));
             },
 
             Di => {
@@ -1553,6 +1554,12 @@ impl Cpu {
         }
     }
 
+}
+
+impl Default for Cpu {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 #[allow(dead_code)]
@@ -5426,7 +5433,6 @@ mod test {
 
         let offset = 0xFF;
         let value = 0xA5;
-        let expected_address:u16 = offset + 0xFF00;
 
         cpu.reg.c = offset as u8;
         cpu.reg.a = value;

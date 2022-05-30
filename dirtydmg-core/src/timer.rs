@@ -127,7 +127,7 @@ mod test{
     use crate::interrupt::InterruptStatus;
 
     fn get_test_pack() -> (TimerUnit, InterruptStatus){
-        let mut tu = TimerUnit::new();
+        let tu = TimerUnit::new();
         let mut is = InterruptStatus::new();
         is.isrmask = 0xFF;
         (tu, is)
@@ -176,5 +176,11 @@ mod test{
         // Partial tick of 1023 should cause update due to one extra tick.
         tu.update(1023, &mut is);
         assert_eq!(tu.tima, tma+2);
+    }
+}
+
+impl Default for TimerUnit{
+    fn default() -> Self {
+        Self::new()
     }
 }

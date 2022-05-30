@@ -1,3 +1,7 @@
+#![allow(
+    clippy::bool_comparison,
+)]
+
 pub mod bus;
 #[allow(dead_code)]
 pub mod cartrige;

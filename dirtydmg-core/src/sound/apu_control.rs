@@ -69,3 +69,9 @@ impl ApuControl {
     }
 
 }
+
+impl Default for ApuControl {
+    fn default() -> Self {
+        Self::new()
+    }
+}

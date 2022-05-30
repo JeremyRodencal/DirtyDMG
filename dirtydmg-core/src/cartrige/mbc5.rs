@@ -49,7 +49,9 @@ impl Mbc5Cart {
         };
         mapper.update_ram_bank_offset();
         mapper.update_rom_bank_offset();
-        return mapper;
+        
+        // Return the mapper
+        mapper
     }
 
     fn update_rom_bank_offset(&mut self) {
@@ -71,15 +73,15 @@ impl MapperRW for Mbc5Cart {
         match addr {
             // Bank zero area
             Mbc5Cart::ROM_BANK_0_START_ADDR..=Mbc5Cart::ROM_BANK_0_END_ADDR => {
-                return rom[addr];
+                rom[addr]
             }
             // Switchable bank area
             Mbc5Cart::ROM_BANK_SWITCH_START_ADDR..=Mbc5Cart::ROM_BANK_SWITCH_END_ADDR => {
-                return rom[self.rom_offset + addr - Mbc5Cart::ROM_BANK_SWITCH_START_ADDR];
+                rom[self.rom_offset + addr - Mbc5Cart::ROM_BANK_SWITCH_START_ADDR]
             }
             // Ram area
             Mbc5Cart::RAM_START_ADDR..=Mbc5Cart::RAM_END_ADDR => {
-                return ram[self.ram_offset + addr - Mbc5Cart::RAM_START_ADDR];
+                ram[self.ram_offset + addr - Mbc5Cart::RAM_START_ADDR]
             }
             // For any other address, return 0xFF.
             _ => {
@@ -96,8 +98,7 @@ impl MapperRW for Mbc5Cart {
                 // Only the magic value of 0xA enables ram.
                 // Any other value disables ram
                 self.ram_enabled = 
-                    if value & 0xF == 0xA { true }
-                    else { false };
+                    value & 0xF == 0xA;
             }
             // Bank cfg 0 (lower 8 rom bank bits)
             Mbc5Cart::BANK_CFG_0_START_ADDR..=Mbc5Cart::BANK_CFG_0_END_ADDR => {

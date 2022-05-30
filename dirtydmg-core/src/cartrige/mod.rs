@@ -82,7 +82,7 @@ impl CartInfo{
                      info.battery = true},
             // TODO Complete cartrige type parsing.
             value => {
-                return Err(format!("Unsupported cartrige type: {:#02X}", value).to_owned());
+                return Err(format!("Unsupported cartrige type: {:#02X}", value))
             }
         };
 
@@ -93,12 +93,12 @@ impl CartInfo{
             0x02 => {info.rom_size = 128 * 0x400;}
             0x03 => {info.rom_size = 256 * 0x400;}
             0x04 => {info.rom_size = 512 * 0x400;}
-            0x05 => {info.rom_size = 1 * 0x100000;}
+            0x05 => {info.rom_size = 0x100000;}
             0x06 => {info.rom_size = 2 * 0x100000;}
             0x07 => {info.rom_size = 4 * 0x100000;}
             0x08 => {info.rom_size = 8 * 0x100000;}
             value => {
-                return Err(format!("Unsupported cartrige rom size: {:02X}", value).to_owned())
+                return Err(format!("Unsupported cartrige rom size: {:02X}", value))
             }
         };
 
@@ -111,7 +111,7 @@ impl CartInfo{
             0x04 => {info.ram_size = 128 * 0x400;}
             0x05 => {info.ram_size = 64 * 0x400;}
             value => {
-                return Err(format!("Unsupported cartrige ram size: {:02X}", value).to_owned());
+                return Err(format!("Unsupported cartrige ram size: {:02X}", value));
             }
         };
         // Special case for MBC2 mapper with integrated RAM
@@ -119,7 +119,7 @@ impl CartInfo{
             info.ram_size = 512;
         }
 
-        return Ok(info);
+        Ok(info)
     }
 }
 
@@ -132,7 +132,7 @@ pub struct Cartrige
 
 impl Cartrige {
     pub fn new() -> Cartrige{
-        return Cartrige {
+        Cartrige {
             ram: vec![0u8, 0],
             rom: vec![0u8, 0],
             mapper: Box::new(no_mapper::NoMapper{}),
@@ -162,12 +162,12 @@ impl Cartrige {
             };
 
         let cart = Cartrige {
-            mapper,
             rom,
             ram,
+            mapper,
         };
 
-        return Ok(cart);
+        Ok(cart)
     }
 
     pub fn load_rom(&mut self, rom_data: &[u8]) -> Result<(), String>
@@ -201,7 +201,7 @@ impl Cartrige {
         self.ram = ram;
         self.mapper = mapper;
 
-        return Ok(());
+        Ok(())
     }
 
     pub fn load_ram(&mut self, sram: &[u8]) {
@@ -228,3 +228,8 @@ impl BusRW for Cartrige {
     }
 }
 
+impl Default for Cartrige {
+    fn default() -> Self {
+        Self::new()
+    }
+}

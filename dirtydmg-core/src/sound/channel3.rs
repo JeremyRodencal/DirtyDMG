@@ -181,14 +181,11 @@ impl Channel3 {
 
 impl BusRW for Channel3{
     fn bus_write8(&mut self, addr: usize, value:u8) {
-        match addr {
+        if let 0xFF30..=0xFF3F = addr {
             // Sample ram
-            0xFF30..=0xFF3F  => {
-                let index = (addr - 0xFF30) * 2;
-                self.sample_data[index] = value >> 4;
-                self.sample_data[index+1] = value & 0xF;
-            }
-            _ => {}
+            let index = (addr - 0xFF30) * 2;
+            self.sample_data[index] = value >> 4;
+            self.sample_data[index+1] = value & 0xF;
         }
     }
 
@@ -201,5 +198,11 @@ impl BusRW for Channel3{
             }
             _ => {0xFF}
         }
+    }
+}
+
+impl Default for Channel3{
+    fn default() -> Self{
+        Self::new()
     }
 }

@@ -14,7 +14,7 @@ pub trait BusRW{
 
     /// Default 16bit write implementation made of 2 8 bit writes.
     fn bus_write16(&mut self, addr: usize, value: u16){
-        self.bus_write8(addr, value as u8 & 0xFF);
+        self.bus_write8(addr, value as u8);
         self.bus_write8(addr + 1, (value >> 8) as u8);
     }
 }
@@ -81,6 +81,12 @@ impl Bus {
     pub fn add_item(&mut self, item:BusItem)
     {
         self.members.push(item);
+    }
+}
+
+impl Default for Bus {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
