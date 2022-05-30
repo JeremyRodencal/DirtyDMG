@@ -1,4 +1,7 @@
-use std::borrow::BorrowMut;
+#![allow(
+    clippy::bool_comparison,
+)]
+
 use std::io::{ErrorKind, Write};
 use std::io::Read;
 use std::fs;
@@ -6,7 +9,6 @@ use std::time::{Instant, Duration};
 
 extern crate sdl2;
 
-use sdl2::libc::open;
 use sdl2::pixels::{Color, PixelFormatEnum};
 use sdl2::event::Event;
 use sdl2::rect::{Rect};
@@ -36,14 +38,14 @@ fn load_file(filepath: &str) -> Result<Vec<u8>, std::io::Error>
     let mut rom_data: Vec<u8> = Vec::new();
     rom_file.read_to_end(&mut rom_data).unwrap();
 
-    return Ok(rom_data);
+    Ok(rom_data)
 }
 
 fn load_sram(filepath: &str) -> Result<Vec<u8>, std::io::Error>{
     let mut ram_file = fs::File::open(filepath)?;
     let meta = ram_file.metadata()?;
 
-    if meta.len() >  (1 * 1024 * 1024) {
+    if meta.len() >  (1024 * 1024) {
         return Err(std::io::Error::new(ErrorKind::Other, "ram file is too large."));
     }
 
@@ -59,7 +61,7 @@ fn load_sram(filepath: &str) -> Result<Vec<u8>, std::io::Error>{
 }
 
 fn save_sram(filepath: &str, data: &[u8]){
-    let mut sram_file = fs::OpenOptions::new()
+    let sram_file = fs::OpenOptions::new()
         .write(true)
         .truncate(true)
         .create(true)
@@ -201,6 +203,9 @@ fn main() {
             }
         }
     }
+    if let Some(x) = joy {
+        println!("joystick guid {}", x.guid());
+    }
 
     let desired_spec = AudioSpecDesired {
         freq: Some(44100),
@@ -226,7 +231,7 @@ fn main() {
     canvas.clear();
     canvas.present();
 
-    let mut surfaceBuffer = DmgSurfaceRenderer::new(canvas.default_pixel_format());
+    let mut surface_buffer = DmgSurfaceRenderer::new(canvas.default_pixel_format());
     let tc = canvas.texture_creator();
     let mut framecount = 0;
     let mut timer = Instant::now();
@@ -234,7 +239,7 @@ fn main() {
     let mut buf = Vec::<i8>::new();
     loop {
         while audio_queue.size() > 512 {
-           std::thread::sleep_ms(1);
+           std::thread::sleep(Duration::from_millis(1));
         }
         dmg.update();
 
@@ -252,10 +257,10 @@ fn main() {
             let mut ppu = dmg.ppu.as_ref().borrow_mut();
             let y = ppu.line_y - 1;
             ppu.line_pending = false;
-            surfaceBuffer.draw_line(&ppu.line_buffer, y as i32);
+            surface_buffer.draw_line(&ppu.line_buffer, y as i32);
             drop(ppu);
             if y == 143 {
-                let tex = tc.create_texture_from_surface(&surfaceBuffer.surface).unwrap();
+                let tex = tc.create_texture_from_surface(&surface_buffer.surface).unwrap();
                 canvas.copy(&tex, None, None).unwrap();
                 canvas.present();
                 framecount += 1;
@@ -291,7 +296,9 @@ fn main() {
         if quit {
             let mut sram = Vec::new();
             dmg.get_sram(&mut sram);
-            if sram.len() > 0 {
+
+            // Save sram if there was any.
+            if sram.is_empty() == false {
                 save_sram(&ram_filepath, &sram);
             }
             return;
