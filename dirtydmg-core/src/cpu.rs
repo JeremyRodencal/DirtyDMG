@@ -2,6 +2,12 @@ use byteorder::{ByteOrder, LittleEndian};
 use crate::interrupt::InterruptStatus;
 use crate::bus::{BusRW};
 
+///Enumeration of usable registers on the system.
+///
+///### Details
+///Names are given for all registers, including the 16 bit registers
+///that are really composed of two 8 bit registers.
+///
 #[derive(Debug)]
 #[derive(Clone, Copy)]
 #[derive(PartialEq)]
@@ -22,6 +28,12 @@ enum Register {
     SP
 }
 
+/// Register set structure that holds all registers for the CPU.
+/// 
+/// ### Details
+/// Registers are all represented in their smallest usable form.
+/// This means 16 bit registers are stored as two distinct 8 bit registers.
+/// 
 pub struct Regs {
     pub a:u8,
     pub f:u8,
@@ -41,6 +53,11 @@ impl Regs {
     const SUB_FLAG:u8    = 0b0100_0000;
     const ZERO_FLAG:u8   = 0b1000_0000;
 
+    /// Constructs a new register set.
+    ///  
+    /// ### Details
+    /// All registers will be zero initialized.
+    /// 
     fn new()->Regs {
         Regs{
             a:0, 
@@ -56,6 +73,11 @@ impl Regs {
         }
     }
 
+    /// Reads a named 8 bit register.
+    ///
+    /// ## Panics
+    /// Will panic if attempting to read a 16 bit register.
+    ///
     fn read8(&self, reg:Register) -> u8
     {
         match reg
@@ -72,6 +94,10 @@ impl Regs {
         }
     }
 
+    /// Reads a named 16 bit register
+    ///
+    /// ## Panics
+    /// Will panic if attempting to read an 8 bit register.
     fn read16(&self, reg:Register) -> u16 {
         match reg {
             Register::AF => (self.a as u16) << 8 | (self.f as u16),
@@ -83,6 +109,10 @@ impl Regs {
         }
     }
 
+    /// Writes a named 8 bit register
+    /// 
+    /// ## Panics
+    /// Will panic if attempting to write a 16 bit register.
     fn write8(&mut self, reg:Register, value:u8) {
         match reg {
             Register::A => self.a = value,
@@ -97,6 +127,10 @@ impl Regs {
         }
     }
 
+    /// Write a named 16 bit register
+    /// 
+    /// ## Panics
+    /// Will panic if attempting to write an 8 bit register.
     fn write16(&mut self, reg:Register, value:u16) {
         match reg{
             Register::AF => { 
@@ -130,6 +164,7 @@ enum CpuMode {
     Stopped,
 }
 
+/// Gameboy Cpu Structure. Really a Sharp LR35902, according to the internet.
 pub struct Cpu {
     /// CPU registers.
     pub reg: Regs,
@@ -144,6 +179,7 @@ pub struct Cpu {
 }
 
 impl Cpu {
+    /// The number of cycles needed before an ISR can start
     const ISR_OVERHEAD_CYCLES:u8 = 5;
     const VBLANK_ISR_ADDR:u16 = 0x40;
     const LCD_ISR_ADDR:u16    = 0x48;
@@ -151,6 +187,10 @@ impl Cpu {
     const SERIAL_ISR_ADDR:u16 = 0x58;
     const JOYPAD_ISR_ADDR:u16 = 0x60;
 
+    /// Constructs a new CPU instance
+    /// 
+    /// ## Details
+    /// Zero initializes everything and sets the mode to Running.
     pub fn new()->Cpu {
         Cpu {
             reg:Regs::new(),
@@ -161,18 +201,10 @@ impl Cpu {
         }
     }
 
-    pub fn write_mem_test(&mut self, bus:&mut impl BusRW, addr: usize, value: u8)
-    {
-        self.reg.a = value;
-        bus.bus_write8(addr, value);
-    }
-    
-    pub fn read_mem_test(&mut self, bus:&mut impl BusRW, addr: usize)->u8
-    {
-        self.reg.a = bus.bus_read8(addr);
-        self.reg.a
-    }
-
+    /// Reads and advances the program counter.
+    /// 
+    /// ## Details
+    /// Reads a byte from the bus @ PC, then increments the PC register by 1.
     fn read_pc(&mut self, bus:&mut impl BusRW) -> u8
     {
         let value = bus.bus_read8(self.reg.pc as usize);
@@ -180,6 +212,7 @@ impl Cpu {
         value
     }
 
+    /// Checks if a given jump condition is currently true.
     fn test_condition(&mut self, cond:JumpCondition) -> bool
     {
         match cond {
@@ -191,13 +224,15 @@ impl Cpu {
         }
     }
 
-    /// # Attempts to start an ISR.
+    /// Attempts to start an ISR.
     /// 
+    /// ## Details 
     /// If interrupts are enabled, the isr is started.
     /// If interrupts are not enabled, the isr is not started.
     /// If the cpu is halted, the cpu is always returned to the running mode.
     /// 
-    /// Returns true if the ISR was started, false if it was not.
+    /// ## Returns
+    /// True if the ISR was started, false if it was not.
     fn start_isr(&mut self, bus: &mut impl BusRW, addr: u16) -> bool
     {
         let started = self.isr_en;
@@ -221,9 +256,10 @@ impl Cpu {
         started
     }
 
-    /// Checks for and handles pending interrupts
+    /// Checks for and attempts to start pending interrupts.
     /// 
-    /// Returns the number of busy cycles if an ISR is started, or zero if no interrupt started.
+    /// ### Returns 
+    /// True if an interrupt was started, false otherwise.
     #[allow(clippy::collapsible_if)]
     fn update_interrupts(&mut self, bus: &mut impl BusRW, is: &mut InterruptStatus) -> bool
     {
@@ -269,6 +305,10 @@ impl Cpu {
         started
     }
 
+    /// Handles interrupt processing.
+    /// 
+    /// ### Details
+    /// This must be called before update.
     pub fn handle_interrupts(&mut self, bus: &mut impl BusRW, is: &mut InterruptStatus){
         if self.update_interrupts(bus, is)
         {
@@ -277,6 +317,14 @@ impl Cpu {
         }
     }
 
+    /// Exeuctes a CPU update by exeucting an instruction.
+    /// 
+    /// ### Details
+    /// Executes a single CPU instruction and returns the number of cycles
+    /// needed to complete that operation.
+    /// 
+    /// ### Returns
+    /// The number of cycles used in the update.
     pub fn update(&mut self, bus: &mut impl BusRW) -> u8
     {
         // Handle any pending interrupts
@@ -298,6 +346,16 @@ impl Cpu {
         self.busy_cycles as u8
     }
 
+    /// Executes a single instruction.
+    /// 
+    /// ### Details
+    /// This will fetch, decode and execute a single instruction.
+    /// 
+    /// The busy_cycles field will be updated with the number of cycles needed
+    /// to execute the instruction.
+    /// 
+    /// ### Returns
+    /// The number of cycles needed to execute the instruction.
     fn execute_instruction(&mut self, bus:&mut impl BusRW) -> u8
     {
         // Read the opcode, fetch the instruction details, and read in the entire instruction.
@@ -1565,215 +1623,252 @@ impl Default for Cpu {
     }
 }
 
+/// A condition that can cause a branch to be taken or skipped.
+/// 
 #[derive(Clone, Copy, Debug)]
 enum JumpCondition {
-    Always, // Always jump
-    Z,      // Jump if zero flag set
-    Nz,     // Jump if zero flag not set
-    C,      // Jump if carry flag set
-    Nc,     // Jump if carry flag not set
+    /// Always jump
+    Always, 
+    /// Jump if zero flag set
+    Z,      
+    /// Jump if zero flag not set
+    Nz,     
+    /// Jump if carry flag set
+    C,      
+    /// Jump if carry flag not set
+    Nc,     
 }
 
+/// Operations that can be executed by the CPU.
+/// 
+/// ### Details
+/// These can be considered mildly generalized versions of instructions.
+/// These operations can be configured with some arguments. For example,
+/// a LdRR operations takes two registers, once source register, and one
+/// destination register.
 #[derive(Debug)]
 enum Operation {
-    // A no operation.
+    /// A no operation.
     Nop,
-    // A stop operation.
+    /// A stop operation.
     Stop,
-    // A halt operation.
+    /// A halt operation.
     Halt,
 
-    // A register to register transfer.
+    /// A register to register transfer.
     LdRR{dst:Register, src:Register},
-    // A register from memory transfer.
+    /// A register from memory transfer.
     LdRM{dst:Register, src:Register},
-    // A 16bit immediate load into a 16 bit register.
+    /// A 16 bit immediate load into a 16 bit register.
     LdR16I16{dst:Register},
-    // Store a register into memory pointed to by 16bit register.
+    /// Store a register into memory pointed to by 16bit register.
     LdMR16{dst:Register, src:Register},
-    // Store the A register into memory pointed to by the HL register, and modify HL.
+    /// Store the A register into memory pointed to by the HL register, and modify HL.
     LdMR16Mv{add:i8},
-    // Store an 8bit register into memory addressed by dst.
+    /// Store an 8bit register into memory addressed by dst.
     LdMR{dst:Register, src:Register},
-    // Read into the A register from memory pointed to by the HL register, and modify HL.
+    /// Read into the A register from memory pointed to by the HL register, and modify HL.
     LdRMMv{add:i8},
-    // Load a register with an 8 bit immediate value.
+    /// Load a register with an 8 bit immediate value.
     LdRI{dst:Register},
-    // Save a 16 bit register to an immediate address.
+    /// Save a 16 bit register to an immediate address.
     LdI16R16{src:Register},
-    // Store an 8 bit immediate into memory pointed to by a 16 bit register.
+    /// Store an 8 bit immediate into memory pointed to by a 16 bit register.
     LdMI{dst:Register},
-    // Store register into zero page memory addressed by a 8 bit immediate value.
+    /// Store register into zero page memory addressed by a 8 bit immediate value.
     LdZIR{src: Register},
-    // Store register into zero page memory addressed by an 8 bit register.
+    /// Store register into zero page memory addressed by an 8 bit register.
     LdZRR{dst: Register, src:Register},
-    // Load a register from zero page memory addressed by an 8 bit immediate value.
+    /// Load a register from zero page memory addressed by an 8 bit immediate value.
     LdRZI{dst: Register},
-    // Load a register from zero page memory addressed by an 8 bit register.
+    /// Load a register from zero page memory addressed by an 8 bit register.
     LdRZR{dst: Register, src:Register},
-    // Load a register from 
+    /// Load a register from 
     LdRMI16{dst: Register},
-    // Store a register into memory addressed by a 16 bit immediate value.
+    /// Store a register into memory addressed by a 16 bit immediate value.
     LdMI16R{src: Register},
-    // Add a signed 8 bit immediate value to sp and store in HL.
+    /// Add a signed 8 bit immediate value to sp and store in HL.
     StkMvI,
-    // Set the stack pointer to the value in HL.
+    /// Set the stack pointer to the value in HL.
     LdSpHl,
 
-    // Increment a 16 bit register.
+    /// Increment a 16 bit register.
     IncR16{dst:Register},
-    // Increment an 8 bit register.
+    /// Increment an 8 bit register.
     IncR{dst:Register},
-    // Increment a memory location addressed by 16 bit register.
+    /// Increment a memory location addressed by 16 bit register.
     IncM{dst:Register},
     
-    // Decrement an 8 bit register
+    /// Decrement an 8 bit register
     DecR{dst:Register},
-    // Decrement a 16 bit register
+    /// Decrement a 16 bit register
     DecR16{dst:Register},
-    // Decrement a memory location addressed by a 16 bit register
+    /// Decrement a memory location addressed by a 16 bit register
     DecM{dst:Register},
 
-    // Rotate A once to the left, and carry bit 7 into the carry flag and bit zero.
+    /// Rotate A once to the left, and carry bit 7 into the carry flag and bit zero.
     Rlca,
-    // Rotate A once to the right and carry bit 0 into the carry flag.
+    /// Rotate A once to the right and carry bit 0 into the carry flag.
     Rrca,
-    // Rotate A once to the left, rotate carry into bit 0, rotate bit 7 into the carry flag
+    /// Rotate A once to the left, rotate carry into bit 0, rotate bit 7 into the carry flag
     Rla,
-    // Rotate A once to the right, rotate carry into bit 7, rotate bit zero into the carry flag
+    /// Rotate A once to the right, rotate carry into bit 7, rotate bit zero into the carry flag
     Rra,
 
-    // Add two 16 bit registers.
+    /// Add two 16 bit registers.
     AddR16R16{dst:Register, src:Register},
-    // Add an 8 bit immediate to a 16 bit register.
+    /// Add an 8 bit immediate to a 16 bit register.
     AddR16I{dst:Register},
-    // Add a register to the accumulator
+    /// Add a register to the accumulator
     AddR{src:Register},
-    // Add a byte addressed by HL into the accumulator
+    /// Add a byte addressed by HL into the accumulator
     AddM,
-    // Add an immediate byte to the accumulator
+    /// Add an immediate byte to the accumulator
     AddI,
-    // Add a register and the carry flag to the accumulator
+    /// Add a register and the carry flag to the accumulator
     AddCR{src:Register},
-    // Add a byte addressed by HL and the carry flag to the accumulator
+    /// Add a byte addressed by HL and the carry flag to the accumulator
     AddCM,
-    // Add an immediate byte and the carry flag to the accumulator
+    /// Add an immediate byte and the carry flag to the accumulator
     AddCI,
-    // Subtract a register from the accumulator
+    /// Subtract a register from the accumulator
     SubR{src:Register},
-    // Subtract memory locaton address by HL and the carry flag from the accumulator.
+    /// Subtract memory locaton address by HL and the carry flag from the accumulator.
     SubM,
-    // Subtract an immediate byte from the accumulator
+    /// Subtract an immediate byte from the accumulator
     SubI,
-    // Subtract a register and the carry flag from the accumulator
+    /// Subtract a register and the carry flag from the accumulator
     SbcR{src:Register},
-    // Subtract value in memory addressed by HL and the carry flag from the accumulator.
+    /// Subtract value in memory addressed by HL and the carry flag from the accumulator.
     SbcM,
-    // Subtract an imediate value and the carry flag from the accumulator
+    /// Subtract an imediate value and the carry flag from the accumulator
     SbcI,
-    // Bitwise AND the accumulator against a register.
+    /// Bitwise AND the accumulator against a register.
     AndR{src:Register},
-    // Bitwise AND the accumulator against a memory value addressed by HL.
+    /// Bitwise AND the accumulator against a memory value addressed by HL.
     AndM,
-    // Bitwise AND the accumulator agains an immediate value.
+    /// Bitwise AND the accumulator agains an immediate value.
     AndI,
-    // Bitwise XOR the accumulator against a register.
+    /// Bitwise XOR the accumulator against a register.
     XorR{src:Register},
-    // Bitwise XOR the accumulator against a memory value addressed by HL.
+    /// Bitwise XOR the accumulator against a memory value addressed by HL.
     XorM,
-    // Bitwise XOR the accumulator against an immeidate value.
+    /// Bitwise XOR the accumulator against an immeidate value.
     XorI,
-    // Bitwise OR the accumulator against a register.
+    /// Bitwise OR the accumulator against a register.
     OrR{src:Register},
-    // Bitwise XOR the accumulator against a memory value addressed by HL.
+    /// Bitwise XOR the accumulator against a memory value addressed by HL.
     OrM,
-    // Bitwise OR the accumulator against an immediate value.
+    /// Bitwise OR the accumulator against an immediate value.
     OrI,
-    // Compare a register against the accumulator
+    /// Compare a register against the accumulator
     CpR{src:Register},
-    // Compare a memory location addressed by HL to the accumulator.
+    /// Compare a memory location addressed by HL to the accumulator.
     CpM,
-    // Compare an immediate value to the accumulator.
+    /// Compare an immediate value to the accumulator.
     CpI,
 
-    // Correct binary coded decimal.
+    /// Correct binary coded decimal.
     Daa,
 
-    // One's compliment of register A.
+    /// One's compliment of register A.
     Cpl,
-    // Set carry flag.
+    /// Set carry flag.
     Scf,
-    // Clear carry flag
+    /// Clear carry flag
     Ccf,
 
-    // Jump relative
+    /// Jump relative
     Jr{cond: JumpCondition},
-    // Jump
+    /// Jump
     Jp{cond: JumpCondition},
-    // Jump to address in HL.
+    /// Jump to address in HL.
     JpHL,
-    // Return
+    /// Return
     Ret{cond: JumpCondition},
     // Return from interrupt
     Reti,
-    // Call a routine
+    /// Call a routine
     Call{cond: JumpCondition},
-    // Reset to a a handler in zero page.
+    /// Reset to a a handler in zero page.
     Rst{index: u8},
 
-    // Pushes a 16 bit register onto the stack
+    /// Pushes a 16 bit register onto the stack
     Push{src: Register},
-    // Pops the stack into a 16 bit register.
+    /// Pops the stack into a 16 bit register.
     Pop{dst: Register},
 
-    // Disable interrupts
+    /// Disable interrupts
     Di,
-    // Enable interrupts
+    /// Enable interrupts
     Ei,
 
-    // A placeholder operation for the 0xCB series of multibyte instructions.
+    /// A placeholder operation for the 0xCB series of multibyte instructions.
     CBExt,
-
+    /// Rotate register left, updating the carry flag with bit 7.
     RlcR{src:Register},
+    /// Rotate memory location left, updating the carry flag with bit 7.
     RlcM,
-
+    /// Rotate register right, updating the carry flag with bit 0.
     RrcR{src:Register},
+    /// Rotate memory location left, updating the carry flag with bit 0.
     RrcM,
-
+    /// Rotate register left, shfting in the carry flag.
     RlR{src:Register},
+    /// Rotate memory location left, shifting in the carry flag.
     RlM,
-
+    /// Rotate register right, shifting in the carry flag.
     RrR{src:Register},
+    /// Rotate memory location right, shifting in the carry flag.
     RrM,
-
+    /// Arithmatic register left shift
     SlaR{src:Register},
+    /// Arithmatic memory location left shift
     SlaM,
-
+    /// Arithmatic register right shift
     SraR{src:Register},
+    /// Arithmatic memory location right shift
     SraM,
-
+    /// Swap register high and low nibbles.
     SwapR{src:Register},
+    /// Swap memory location high and low nibbles.
     SwapM,
 
+    /// Logical shift right on register.
     SrlR{src:Register},
+    /// Logical shift right on a memory location.
     SrlM,
 
+    /// Load (complimented) bit value of register into Z flag
     BitR{index:u8, src:Register},
+    /// Load (complimented) bit value of memory location into Z flag
     BitM{index:u8},
-
+    /// Reset bit in register to zero.
     ResR{index:u8, src:Register},
+    /// Reset bit in memory location to zero.
     ResM{index:u8},
 
+    /// Set bit in register to 1.
     SetR{index:u8, src:Register},
+    /// Set bit in memory location to 1.
     SetM{index:u8},
 }
 
+/// Structure to represent an instruction.
 struct Instruction{
+    /// The oepration associated with this instruction.
     op:Operation,
+    /// The length of the instruction in bytes
     length:u8,
+    /// The minimum number of cycles needed to execute the instruction.
     cycles:u8,
 }
 
+/// Special table to map an eight bit value to a register.
+/// 
+/// ### Details
+/// This is only used when trying to find the target register
+/// of a multi-byte 0xCB instruction.
 const CB_TARGET_TABLE: [Register;8] = [
     Register::B,
     Register::C,
@@ -1785,6 +1880,7 @@ const CB_TARGET_TABLE: [Register;8] = [
     Register::A,
 ];
 
+/// Table of instructions for all 256 possible base opcodes.
 const INSTRUCTION_TABLE: [Instruction;256] = [
     // 0x00 NOP
     Instruction{op:Operation::Nop, length:1, cycles:1},
