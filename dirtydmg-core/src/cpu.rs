@@ -2,15 +2,19 @@ use byteorder::{ByteOrder, LittleEndian};
 use crate::interrupt::InterruptStatus;
 use crate::bus::{BusRW};
 
-#[allow(dead_code)]
 #[derive(Debug)]
 #[derive(Clone, Copy)]
 #[derive(PartialEq)]
 enum Register {
-    A, F,
-    B, C,
-    D, E,
-    H, L,
+    A, 
+    #[allow(dead_code)] // F is never used by name... but I like it being here.
+    F,
+    B, 
+    C,
+    D, 
+    E,
+    H, 
+    L,
     AF,
     BC,
     DE,
@@ -39,10 +43,14 @@ impl Regs {
 
     fn new()->Regs {
         Regs{
-            a:0, f:0,
-            b:0, c:0, 
-            d:0, e:0,
-            h:0, l:0,
+            a:0, 
+            f:0,
+            b:0, 
+            c:0, 
+            d:0, 
+            e:0,
+            h:0, 
+            l:0,
             sp: 0,
             pc: 0
         }
@@ -115,21 +123,18 @@ impl Regs {
     }
 }
 
-#[allow(dead_code)]
 enum CpuMode {
     Running,
     Halted,
+    #[allow(dead_code)]
     Stopped,
 }
 
-#[allow(dead_code)]
 pub struct Cpu {
     /// CPU registers.
     pub reg: Regs,
     /// Tracks cycles until the cpu will be ready to execute again.
     busy_cycles: u32, 
-    /// Tracks the current cycle number.
-    cycle: u64,       
     /// Tracks if interrupts are enabled or disabled.
     isr_en: bool,
     /// Tracks if the next "instruction" is the start of an ISR.
@@ -138,7 +143,6 @@ pub struct Cpu {
     mode: CpuMode,
 }
 
-#[allow(dead_code)]
 impl Cpu {
     const ISR_OVERHEAD_CYCLES:u8 = 5;
     const VBLANK_ISR_ADDR:u16 = 0x40;
@@ -151,7 +155,6 @@ impl Cpu {
         Cpu {
             reg:Regs::new(),
             busy_cycles: 0,
-            cycle: 0,
             isr_en: false,
             isr_pending: false,
             mode: CpuMode::Running,
@@ -1562,7 +1565,6 @@ impl Default for Cpu {
     }
 }
 
-#[allow(dead_code)]
 #[derive(Clone, Copy, Debug)]
 enum JumpCondition {
     Always, // Always jump
@@ -1572,7 +1574,6 @@ enum JumpCondition {
     Nc,     // Jump if carry flag not set
 }
 
-#[allow(dead_code)]
 #[derive(Debug)]
 enum Operation {
     // A no operation.
@@ -1767,14 +1768,12 @@ enum Operation {
     SetM{index:u8},
 }
 
-#[allow(dead_code)]
 struct Instruction{
     op:Operation,
     length:u8,
     cycles:u8,
 }
 
-#[allow(dead_code)]
 const CB_TARGET_TABLE: [Register;8] = [
     Register::B,
     Register::C,
@@ -1786,7 +1785,6 @@ const CB_TARGET_TABLE: [Register;8] = [
     Register::A,
 ];
 
-#[allow(dead_code)]
 const INSTRUCTION_TABLE: [Instruction;256] = [
     // 0x00 NOP
     Instruction{op:Operation::Nop, length:1, cycles:1},
