@@ -42,8 +42,8 @@ impl ApuControl {
         // Bit 2 - Output sound 3 to SO1 terminal
         // Bit 1 - Output sound 2 to SO1 terminal
         // Bit 0 - Output sound 1 to SO1 terminal
-        let mut shift = output as u8;         
-        shift += channel as u8 * 4;
+        let mut shift = (output as u8) * 4;
+        shift += channel as u8;
         // We know what bit we want, sample it.
         (self.nr51 & (1 << shift)) != 0
     }
