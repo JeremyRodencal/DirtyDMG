@@ -247,7 +247,7 @@ fn main() {
             buf.push(left);
             buf.push(right);
             if buf.len() >= 512 {
-                audio_queue.queue(&buf);
+                audio_queue.queue_audio(&buf).unwrap();
                 buf.clear();
             }
         }
