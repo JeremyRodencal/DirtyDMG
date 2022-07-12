@@ -1,5 +1,8 @@
 use crate::bus::BusRW;
+use byteorder::{WriteBytesExt, ReadBytesExt};
+use std::io::{Read, Write};
 
+#[derive(PartialEq, Debug)]
 pub struct InterruptStatus {
     /// Interrupt status request byte. Use the assorted XXX_MASK constants to check for requests.
     pub isrreq: u8,
@@ -102,6 +105,21 @@ impl InterruptStatus {
     pub fn is_joypad_active(&self) -> bool {
         self.isrreq & self.isrmask & InterruptStatus::JOYPAD_MASK > 0
     }
+
+    pub fn serialize<T>(&self, writer: &mut T)
+        where T : Write + ?Sized
+    {
+        writer.write_u8(self.isrreq).unwrap();
+        writer.write_u8(self.isrmask).unwrap();
+    }
+
+    pub fn deserialize<T>(&mut self, reader: &mut T)
+        where T : Read + ?Sized
+    {
+        self.isrreq = reader.read_u8().unwrap();
+        self.isrmask = reader.read_u8().unwrap();
+    }
+
 }
 
 impl BusRW for InterruptStatus {
@@ -334,5 +352,26 @@ mod test {
         let mut isr = get_isr_all_active();
         isr.clear_joypad();
         assert_eq!(isr.read_isr_flag(), !InterruptStatus::JOYPAD_MASK);
+    }
+
+    #[test]
+    fn test_serialize_deserilize(){
+        // Populate
+        let mut isr = InterruptStatus::new();
+        isr.isrmask = 0xAA;
+        isr.isrreq = 0x55;
+        let mut buffer = [0u8; 2];
+        let mut de_isr = InterruptStatus::new();
+
+        {
+            let mut writer = &mut buffer[..];
+            isr.serialize(&mut writer);
+        }
+        {
+            let mut reader = &buffer[..];
+            de_isr.deserialize(&mut reader);
+        }
+
+        assert_eq!(isr, de_isr);
     }
 }
