@@ -1,4 +1,6 @@
-use byteorder::{ByteOrder, LittleEndian};
+use byteorder::{WriteBytesExt, ReadBytesExt, ByteOrder, LittleEndian};
+use std::io::{Read, Write};
+use std::convert::{TryFrom};
 use crate::interrupt::InterruptStatus;
 use crate::bus::{BusRW};
 
@@ -34,6 +36,7 @@ enum Register {
 /// Registers are all represented in their smallest usable form.
 /// This means 16 bit registers are stored as two distinct 8 bit registers.
 /// 
+#[derive(Debug, PartialEq)]
 pub struct Regs {
     pub a:u8,
     pub f:u8,
@@ -155,13 +158,70 @@ impl Regs {
             _ => panic!("Invalid 8bit register write of {}=>{:?}", value, reg)
         }
     }
+
+    pub fn serialize<T>(&self, writer:&mut T)
+        where T: Write + ?Sized
+    {
+        writer.write_u8(self.a).unwrap();
+        writer.write_u8(self.f).unwrap();
+        writer.write_u8(self.b).unwrap();
+        writer.write_u8(self.c).unwrap();
+        writer.write_u8(self.d).unwrap();
+        writer.write_u8(self.e).unwrap();
+        writer.write_u8(self.h).unwrap();
+        writer.write_u8(self.l).unwrap();
+        writer.write_u16::<LittleEndian>(self.sp).unwrap();
+        writer.write_u16::<LittleEndian>(self.pc).unwrap();
+    }
+
+    pub fn deserialize<T>(&mut self, reader:&mut T)
+        where T: Read + ?Sized
+    {
+        self.a = reader.read_u8().unwrap();
+        self.f = reader.read_u8().unwrap();
+        self.b = reader.read_u8().unwrap();
+        self.c = reader.read_u8().unwrap();
+        self.d = reader.read_u8().unwrap();
+        self.e = reader.read_u8().unwrap();
+        self.h = reader.read_u8().unwrap();
+        self.l = reader.read_u8().unwrap();
+        self.sp = reader.read_u16::<LittleEndian>().unwrap();
+        self.pc = reader.read_u16::<LittleEndian>().unwrap();
+    }
+
 }
 
+#[derive(Debug, PartialEq)]
 enum CpuMode {
     Running,
     Halted,
     #[allow(dead_code)]
     Stopped,
+}
+
+impl TryFrom<u8> for CpuMode {
+    type Error = &'static str;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value
+        {
+            0 => Ok(CpuMode::Running),
+            1 => Ok(CpuMode::Halted),
+            2 => Ok(CpuMode::Stopped),
+            _ => Err("Unknown CpuMode value")
+        }
+    }
+}
+
+impl CpuMode {
+    fn as_u8(&self) -> u8
+    {
+        match *self{
+            CpuMode::Running => 0u8,
+            CpuMode::Halted => 1u8,
+            CpuMode::Stopped => 2u8
+        }
+    }
 }
 
 /// Gameboy Cpu Structure. Really a Sharp LR35902, according to the internet.
@@ -176,6 +236,28 @@ pub struct Cpu {
     isr_pending: bool,
     /// Tracks if the cpu is running halted or stopped.
     mode: CpuMode,
+}
+
+impl Cpu {
+    pub fn serialize<T>(&self, writer:&mut T)
+        where T: Write + ?Sized
+    {
+        self.reg.serialize(writer);
+        writer.write_u32::<LittleEndian>(self.busy_cycles).unwrap();
+        writer.write_u8(self.isr_en as u8).unwrap();
+        writer.write_u8(self.isr_pending as u8).unwrap();
+        writer.write_u8(self.mode.as_u8()).unwrap();
+    }
+    
+    pub fn deserialize<T>(&mut self, reader: &mut T)
+        where T: Read + ?Sized
+    {
+        self.reg.deserialize(reader);
+        self.busy_cycles = reader.read_u32::<LittleEndian>().unwrap();
+        self.isr_en = reader.read_u8().unwrap() != 0;
+        self.isr_pending = reader.read_u8().unwrap() != 0;
+        self.mode = CpuMode::try_from(reader.read_u8().unwrap()).unwrap();
+    }
 }
 
 impl Cpu {
@@ -6098,5 +6180,45 @@ mod test {
         // Cpu should have executed a NOP since ram is zeroed.
         assert_eq!(cycles, 1);
         assert_eq!(cpu.reg.pc, 1);
+    }
+
+    #[test]
+    fn cpu_serialize_deserialize()
+    {
+        // Setup the CPU with data to be serialized
+        let mut cpu = Cpu::new();
+        cpu.isr_en = true;
+        cpu.isr_pending = true;
+        cpu.busy_cycles = 42;
+        cpu.mode = CpuMode::Halted;
+        cpu.reg.a = 1;
+        cpu.reg.f = 2;
+        cpu.reg.b = 3;
+        cpu.reg.c = 4;
+        cpu.reg.d = 5;
+        cpu.reg.e = 6;
+        cpu.reg.h = 7;
+        cpu.reg.l = 8;
+        cpu.reg.sp = 0x090A;
+        cpu.reg.pc = 0x0B0C;
+
+        // Serialize and deserialize the CPU
+        let mut data = [0u8; 19];
+        {
+            let mut writer = &mut data[..];
+            cpu.serialize(&mut writer);
+        }
+        let mut de_cpu = Cpu::new();
+        {
+            let mut reader = &data[..];
+            de_cpu.deserialize(&mut reader);
+        }
+
+        // Make sure the two cpu structures match.
+        assert_eq!(cpu.reg, de_cpu.reg);
+        assert_eq!(cpu.busy_cycles, de_cpu.busy_cycles);
+        assert_eq!(cpu.isr_en, de_cpu.isr_en);
+        assert_eq!(cpu.isr_pending, de_cpu.isr_pending);
+        assert_eq!(cpu.mode, de_cpu.mode);
     }
 }
