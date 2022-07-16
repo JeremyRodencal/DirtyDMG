@@ -129,6 +129,15 @@ impl MapperRW for Mbc1Cart {
             }
         }
     }
+
+    fn serialize(&self, _writer: &mut dyn std::io::Write) {
+        todo!();
+    }
+
+    fn deserialize(&mut self, _reader: &mut dyn std::io::Read) {
+        todo!();
+    }
+
 }
 
 #[cfg(test)]
