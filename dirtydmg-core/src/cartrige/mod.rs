@@ -4,6 +4,7 @@ mod mbc3;
 mod mbc5;
 mod no_mapper;
 use crate::bus::BusRW;
+use std::io::{Read, Write};
 
 trait MapperRW{
     /// Reads a single byte from the mapper.
@@ -11,8 +12,17 @@ trait MapperRW{
 
     /// Writes a single byte to the mapper.
     fn write(&mut self, rom:&mut [u8], ram:&mut [u8], addr:u16, value:u8);
-}
 
+    /// Serializes the internal mapper state.
+    fn serialize(&self, _writer: &mut dyn Write){
+        todo!("Mapper is missing serialize.");
+    }
+
+    /// Deserializes the internal mapper state.
+    fn deserialize(&mut self, _reader: &mut dyn Read) {
+        todo!("Mapper is missing deserialize");
+    }
+}
 
 enum MapperType{
     Rom,
@@ -214,6 +224,30 @@ impl Cartrige {
         buffer.clear();
         buffer.clone_from(&self.ram);
     }
+
+    /// Serialize cartrige state.
+    pub fn serialize<T>(&self, writer:&mut T)
+        where T: Write
+    {
+        // Write the ram
+        writer.write_all(&self.ram).unwrap();
+
+        // ROM is skipped because it should be loaded separately with the cart.
+
+        // Write the mapper state
+        self.mapper.serialize(writer);
+    }
+
+    /// Deserialize cartrige state.
+    pub fn deserialize<T>(&mut self, reader: &mut T)
+        where T: Read
+    {
+        // Read the ram in from the stream.
+        reader.read_exact(&mut self.ram).unwrap();
+
+        self.mapper.deserialize(reader);
+    }
+
 }
 
 impl BusRW for Cartrige {
@@ -231,5 +265,73 @@ impl BusRW for Cartrige {
 impl Default for Cartrige {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::{*};
+
+    impl MapperRW for [u8;5]
+    {
+        fn read(&mut self, _rom:&mut [u8], _ram:&mut [u8], addr:u16) -> u8 {
+            return self[addr as usize];
+        }
+
+        fn write(&mut self, _rom:&mut [u8], _ram:&mut [u8], addr:u16, value:u8) {
+            self[addr as usize] = value;
+        }
+
+        fn serialize(&self, writer: &mut dyn Write) {
+            writer.write(self).unwrap();
+        }
+
+        fn deserialize(&mut self, reader: &mut dyn Read) {
+            reader.read(self).unwrap();
+        }
+    }
+
+    #[test]
+    fn serializes_and_deserializes()
+    {
+        // Arrange
+        let mut cart = Cartrige::new();
+        cart.ram.resize(2, 3);
+        cart.ram[0] = 3;
+        cart.ram[1] = 3;
+        cart.mapper = Box::new([1u8, 2, 3, 4, 5]);
+
+        let mut buffer = [0u8;7];
+
+        // Act
+        {
+            let mut writer = &mut buffer[..];
+            cart.serialize(&mut writer);
+        }
+
+        cart.ram.resize(2, 0);
+        cart.mapper = Box::new([0u8, 0, 0, 0, 0]);
+
+        // Assert
+        let expected_buffer = [3u8, 3, 1, 2, 3, 4, 5];
+        assert_eq!(expected_buffer, buffer);
+
+        // Act
+        let cart = cart;
+        let mut deserialized_cart = Cartrige::new();
+        deserialized_cart.ram.resize(2, 0);
+        deserialized_cart.mapper = Box::new([0u8, 0, 0, 0, 0]);
+        {
+            let mut reader = &buffer[..];
+            deserialized_cart.deserialize(&mut reader);
+        }
+
+        // Assert
+        assert_eq!(cart.ram, deserialized_cart.ram);
+        assert_eq!(deserialized_cart.bus_read8(0), 1);
+        assert_eq!(deserialized_cart.bus_read8(1), 2);
+        assert_eq!(deserialized_cart.bus_read8(2), 3);
+        assert_eq!(deserialized_cart.bus_read8(3), 4);
+        assert_eq!(deserialized_cart.bus_read8(4), 5);
     }
 }

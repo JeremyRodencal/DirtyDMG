@@ -128,6 +128,14 @@ impl MapperRW for Mbc5Cart {
             }
         }
     }
+
+    fn serialize(&self, _writer: &mut dyn Write) {
+        todo!();
+    }
+
+    fn deserialize(&mut self, _reader: &mut dyn Read) {
+        todo!();
+    }
 }
 
 #[cfg(test)]

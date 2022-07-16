@@ -20,4 +20,15 @@ impl MapperRW for NoMapper {
     fn write(&mut self, _:&mut [u8], _:&mut [u8], _:u16, _:u8) {
         // Nothing to do, ROM only.
     }
+
+    /// Serializes mapper state into a writer
+    fn serialize(&self, _writer: &mut dyn std::io::Write) { 
+        // There is no state to serialize when there is no mapper.
+    }
+
+    /// Deserailizes mapper state from a reader
+    fn deserialize(&mut self, _reader: &mut dyn std::io::Read) { 
+        // There is no state to deserailize when there is no mapper.
+    }
+
 }
