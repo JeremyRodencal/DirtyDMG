@@ -4,6 +4,7 @@
 /// Pixels are aranged in the bits such that the more significant the bits,
 /// the further right they are on the screen. The same applies to the byte
 /// Index, where higher values are farther right.
+#[derive(Debug, PartialEq)]
 pub struct ScanlineBuffer {
     pub pixeldata: [u8;40]
 }
