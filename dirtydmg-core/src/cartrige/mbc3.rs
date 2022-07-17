@@ -1,12 +1,9 @@
+use byteorder::{ReadBytesExt, WriteBytesExt, LittleEndian};
+
 use super::*;
 
-enum BankMode {
-    Mode16KRom,
-    Mode4KRom,
-}
-
+#[derive(Debug, PartialEq)]
 pub struct Mbc3Cart {
-    mode: BankMode,
     rom_offset: usize,
     ram_offset: usize, 
     ram_enabled: bool,
@@ -37,7 +34,6 @@ impl Mbc3Cart {
 
     pub fn new() -> Mbc3Cart {
         let mut mapper = Mbc3Cart {
-            mode:BankMode::Mode16KRom,
             rom_offset:0,
             ram_offset:0,
             ram_enabled: false,
@@ -137,22 +133,56 @@ impl MapperRW for Mbc3Cart {
         }
     }
 
-    fn serialize(&self, _writer: &mut dyn Write) {
-        todo!();
+    fn serialize(&self, writer: &mut dyn Write) {
+        writer.write_u32::<LittleEndian>(self.rom_offset as u32).unwrap();
+        writer.write_u32::<LittleEndian>(self.ram_offset as u32).unwrap();
+        writer.write_u8(self.ram_enabled as u8).unwrap();
+        writer.write_u8(self.is_ram_mode as u8).unwrap();
+        writer.write_u8(self.rom_bank).unwrap();
+        writer.write_u8(self.ram_bank).unwrap();
     }
 
-    fn deserialize(&mut self, _reader: &mut dyn Read) {
-        todo!();
+    fn deserialize(&mut self, reader: &mut dyn Read) {
+        self.rom_offset = reader.read_u32::<LittleEndian>().unwrap() as usize;
+        self.ram_offset = reader.read_u32::<LittleEndian>().unwrap() as usize;
+        self.ram_enabled = reader.read_u8().unwrap() != 0;
+        self.is_ram_mode = reader.read_u8().unwrap() != 0;
+        self.rom_bank = reader.read_u8().unwrap();
+        self.ram_bank = reader.read_u8().unwrap();
     }
 
 }
 
 #[cfg(test)]
 mod test {
+    use super::*;
+
     //TODO write unit tests for this module.
     #[test]
     #[ignore]
-    fn mmc1_needs_to_be_tested(){
+    fn mbc3_needs_to_be_tested(){
         assert!(false);
+    }
+
+    #[test]
+    fn serialize_deserialize_loop(){
+        let mut src = Mbc3Cart::new();
+        src.rom_offset = 0x12345;
+        src.ram_offset = 0x54321;
+        src.ram_enabled = true;
+        src.is_ram_mode = true;
+        src.rom_bank = 0;
+        src.ram_bank = 0;
+        let src = src;
+
+        let mut dst = Mbc3Cart::new();
+        let mut buffer = Vec::new();
+        src.serialize(&mut buffer);
+        {
+            let mut reader = &buffer[..];
+            dst.deserialize(&mut reader);
+        }
+
+        assert_eq!(src, dst);
     }
 }

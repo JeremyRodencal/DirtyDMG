@@ -14,14 +14,10 @@ trait MapperRW{
     fn write(&mut self, rom:&mut [u8], ram:&mut [u8], addr:u16, value:u8);
 
     /// Serializes the internal mapper state.
-    fn serialize(&self, _writer: &mut dyn Write){
-        todo!("Mapper is missing serialize.");
-    }
+    fn serialize(&self, _writer: &mut dyn Write);
 
     /// Deserializes the internal mapper state.
-    fn deserialize(&mut self, _reader: &mut dyn Read) {
-        todo!("Mapper is missing deserialize");
-    }
+    fn deserialize(&mut self, _reader: &mut dyn Read);
 }
 
 enum MapperType{

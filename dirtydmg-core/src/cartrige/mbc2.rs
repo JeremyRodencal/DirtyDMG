@@ -1,12 +1,8 @@
 use super::*;
+use byteorder::{WriteBytesExt, ReadBytesExt, LittleEndian};
 
-enum BankMode {
-    Mode16KRom,
-    Mode4KRom,
-}
-
+#[derive(Debug, PartialEq)]
 pub struct Mbc2Cart {
-    mode: BankMode,
     rom_offset: usize,
     ram_enabled: bool,
     is_ram_mode: bool,
@@ -29,7 +25,6 @@ impl Mbc2Cart {
 
     pub fn new() -> Mbc2Cart {
         let mut mapper = Mbc2Cart {
-            mode:BankMode::Mode16KRom,
             rom_offset:0,
             ram_enabled: false,
             is_ram_mode: false,
@@ -110,22 +105,51 @@ impl MapperRW for Mbc2Cart {
         }
     }
 
-    fn serialize(&self, _writer: &mut dyn Write) {
-        todo!();
+    fn serialize(&self, writer: &mut dyn Write) {
+        writer.write_u32::<LittleEndian>(self.rom_offset as u32).unwrap();
+        writer.write_u8(self.ram_enabled as u8).unwrap();
+        writer.write_u8(self.is_ram_mode as u8).unwrap();
     }
 
-    fn deserialize(&mut self, _reader: &mut dyn Read) {
-        todo!();
+    fn deserialize(&mut self, reader: &mut dyn Read) {
+        self.rom_offset = reader.read_u32::<LittleEndian>().unwrap() as usize;
+        self.ram_enabled  = reader.read_u8().unwrap() != 0;
+        self.is_ram_mode  = reader.read_u8().unwrap() != 0;
     }
 
 }
 
 #[cfg(test)]
 mod test {
-    //TODO write unit tests for this module.
+    use super::*;
+
     #[test]
     #[ignore]
-    fn mmc1_needs_to_be_tested(){
+    fn mmc2_needs_to_be_tested(){
         assert!(false);
+    }
+
+    #[test]
+    fn mbc2_serialize_deserialize_loop()
+    {
+        // Setup an mmc2 mapper
+        let mut mbc2_src = Mbc2Cart::new();
+        mbc2_src.ram_enabled = true;
+        mbc2_src.rom_offset = 0x2345;
+        mbc2_src.is_ram_mode = true;
+        let mbc2_src = mbc2_src;
+
+        let mut buffer = [0u8; 7];
+        {
+            let mut writer = &mut buffer[..];
+            mbc2_src.serialize(&mut writer);
+        }
+        let mut mbc2_dst = Mbc2Cart::new();
+        {
+            let mut reader = &buffer[..];
+            mbc2_dst.deserialize(&mut reader);
+        }
+
+        assert_eq!(mbc2_src, mbc2_dst);
     }
 }

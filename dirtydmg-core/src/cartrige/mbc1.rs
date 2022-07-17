@@ -1,11 +1,7 @@
 use super::MapperRW;
-enum BankMode {
-    Mode16KRom,
-    Mode4KRom,
-}
+use byteorder::{WriteBytesExt, ReadBytesExt, LittleEndian};
 
 pub struct Mbc1Cart {
-    mode: BankMode,
     rom_offset: usize,
     ram_offset: usize, 
     ram_enabled: bool,
@@ -36,7 +32,6 @@ impl Mbc1Cart {
 
     pub fn new() -> Mbc1Cart {
         let mut mapper = Mbc1Cart {
-            mode:BankMode::Mode16KRom,
             rom_offset:0,
             ram_offset:0,
             ram_enabled: false,
@@ -130,12 +125,23 @@ impl MapperRW for Mbc1Cart {
         }
     }
 
-    fn serialize(&self, _writer: &mut dyn std::io::Write) {
-        todo!();
+    fn serialize(&self, writer: &mut dyn std::io::Write) 
+    {
+        writer.write_u32::<LittleEndian>(self.rom_offset as u32).unwrap();
+        writer.write_u32::<LittleEndian>(self.ram_offset as u32).unwrap();
+        writer.write_u8(self.ram_enabled as u8).unwrap();
+        writer.write_u8(self.is_ram_mode as u8).unwrap();
+        writer.write_u8(self.low_bank_bits).unwrap();
+        writer.write_u8(self.high_bank_bits).unwrap();
     }
 
-    fn deserialize(&mut self, _reader: &mut dyn std::io::Read) {
-        todo!();
+    fn deserialize(&mut self, reader: &mut dyn std::io::Read) {
+        self.rom_offset = reader.read_u32::<LittleEndian>().unwrap() as usize;
+        self.ram_offset = reader.read_u32::<LittleEndian>().unwrap() as usize;
+        self.ram_enabled = reader.read_u8().unwrap() != 0;
+        self.is_ram_mode = reader.read_u8().unwrap() != 0;
+        self.low_bank_bits = reader.read_u8().unwrap();
+        self.high_bank_bits = reader.read_u8().unwrap();
     }
 
 }
