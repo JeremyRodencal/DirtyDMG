@@ -1,3 +1,5 @@
+use std::io::{Read, Write};
+use byteorder::{ReadBytesExt, WriteBytesExt, LittleEndian};
 use crate::bus::{BusRW};
 use crate::interrupt::InterruptStatus;
 use crate::interface::ScanlineBuffer;
@@ -63,7 +65,7 @@ const BG_PALETTE_ADDRESS:usize = 0xFF47;
 const OBJ_PALETTE1_ADDRESS:usize = 0xFF48;
 const OBJ_PALETTE2_ADDRESS:usize = 0xFF49;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Debug)]
 /// Structure to hold tile pixel data in an easily accessable format.
 struct Tile {
     /// tile pixel data.
@@ -106,6 +108,7 @@ impl Tile {
     }
 }
 
+#[derive(PartialEq, Debug)]
 struct Palette{
     pub table: [u8;4],
     pub raw: u8,
@@ -181,6 +184,19 @@ enum Mode{
     LcdTransfer = 3
 }
 
+impl From<u8> for Mode {
+    fn from(value: u8) -> Self {
+        match value {
+            0 => Mode::HBlank,
+            1 => Mode::VBlank,
+            2 => Mode::SpriteSearch,
+            3 => Mode::LcdTransfer,
+            _ => {panic!("Invalid LCD mode");}
+        }
+    }
+}
+
+#[derive(PartialEq, Debug)]
 pub struct PPU {
     /// Raw tile data stored in the origial gameboy format.
     tile_data: [u8;TILESET_RAM],
@@ -254,6 +270,8 @@ impl PPU {
     const LCDS_MODE2_IS_MASK: u8 =    1<<5;
     const LCDS_MODE1_IS_MASK: u8 =    1<<4;
     const LCDS_MODE0_IS_MASK: u8 =    1<<3;
+    const LCDS_LINE_CMP_STATUS_MASK: u8 = 1 << 2;
+    const LCDS_MODE_STATUS_MASK: u8 = 0b11;
 
     const OAM_DMA_TRANSFER_TICKS: u8 = 160; // In cpu ticks or "T" cycles.
     
@@ -685,8 +703,24 @@ impl PPU {
             PPU::LCDS_MODE2_IS_MASK | 
             PPU::LCDS_MODE1_IS_MASK |
             PPU::LCDS_MODE0_IS_MASK)
-}
-    fn lcds_read(&mut self) -> u8 {
+    }
+
+    /// # Unpack an lcds byte into all fields.
+    /// ## details
+    /// 
+    /// This allows a previously stored LCDS value to be unpacked. It is not
+    /// accessable to the system, and was written to assist with serialization.
+    fn lcds_unpack_raw(&mut self, data: u8)
+    {
+        self.line_compare_is = data & PPU::LCDS_LINE_CMP_IS_MASK != 0;
+        self.mode2_is = data & PPU::LCDS_MODE2_IS_MASK != 0;
+        self.mode1_is = data & PPU::LCDS_MODE1_IS_MASK != 0;
+        self.mode0_is = data & PPU::LCDS_MODE0_IS_MASK != 0;
+        self.line_compare = data & PPU::LCDS_LINE_CMP_STATUS_MASK != 0;
+        self.mode = Mode::from(data & PPU::LCDS_MODE_STATUS_MASK);
+    }
+
+    fn lcds_read(&self) -> u8 {
         // Reassemble the LCDS value one bit at a time, starting with the msb.
         let mut value = 0;
         value |= self.line_compare_is as u8;
@@ -725,6 +759,147 @@ impl PPU {
                 OAM_START_ADDRESS + x);
         }
     }
+
+    /// # Serialize PPU state into a writer
+    pub fn serialize<T>(& self, writer: &mut T) 
+        where T : Write + ?Sized
+    {
+        // Raw tile data stored in the origial gameboy format.
+        writer.write_all(&self.tile_data).unwrap();
+        writer.write_all(&self.tilemaps).unwrap();
+        writer.write_all(&self.sprite_data).unwrap();
+        writer.write_u8(self.lcdc).unwrap();
+        writer.write_u8(self.lcds_read()).unwrap();
+        writer.write_u8(self.scroll_y).unwrap();
+        writer.write_u8(self.scroll_x).unwrap();
+        writer.write_u8(self.line_y).unwrap();
+        writer.write_u8(self.line_compare_value).unwrap();
+        writer.write_u8(self.window_y).unwrap();
+        writer.write_u8(self.window_x).unwrap();
+        writer.write_u8(self.bg_palette.raw).unwrap();
+        writer.write_u8(self.obj_palette1.raw).unwrap();
+        writer.write_u8(self.obj_palette2.raw).unwrap();
+
+        // // OAM DMA
+        // oam_dma_ticks: u8,
+        writer.write_u8(self.oam_dma_ticks).unwrap();
+        // oam_dma_src: u16,
+        writer.write_u16::<LittleEndian>(self.oam_dma_src).unwrap();
+
+        // // Misc State tracking.
+        // tick_counter: u16,
+        writer.write_u16::<LittleEndian>(self.tick_counter).unwrap();
+        // pub line_buffer: ScanlineBuffer,
+        writer.write_all(&self.line_buffer.pixeldata).unwrap();
+        // pub line_pending: bool
+        writer.write_u8(self.line_pending as u8).unwrap();
+    }
+
+    /// # Load ppu state from a reader
+    pub fn deserialize<T>(&mut self, reader: &mut T)
+        where T: Read + ?Sized
+    {
+        // /// Raw tile data stored in the origial gameboy format.
+        // tile_data: [u8;TILESET_RAM],
+        // /// Nicely broken out pixel verions of the raw tile data.
+        // tiles: [Tile;TILESET_COUNT],
+        reader.read_exact(&mut self.tile_data).unwrap();
+        {
+            let mut address_counter = TILESET_START_ADDRESS;
+            for x in self.tile_data {
+                self.tile_write(x, address_counter);
+                address_counter += 1;
+            }
+        }
+
+        // /// tilemap data.
+        // tilemaps: [u8;TILEMAPS_SIZE],
+        reader.read_exact(&mut self.tilemaps).unwrap();
+
+        // /// Decoded sprite object data
+        // sprites: [OamSprite; OAM_SPRITE_COUNT],
+        // /// Raw OAM data.
+        // sprite_data: [u8;OAM_RAM_SIZE],
+        reader.read_exact(&mut self.sprite_data).unwrap();
+        {
+            let mut address_counter = OAM_START_ADDRESS;
+            for x in self.sprite_data {
+                self.sprite_write(x, address_counter);
+                address_counter += 1;
+            }
+        }
+
+        // // LCDC register
+        // lcdc: u8,
+        // lcd_enabled: bool,
+        // window_tiles_high: bool,    //True if window tiles are in the upper bank.
+        // window_enabled: bool,
+        // bg_window_signed_addressing: bool, // True if bg and window tiles are using the signed addressing method
+        // bg_tiles_high: bool,        // True if the window tiles are in the upper bank.
+        // obj_double_sprites: bool,   // True if sprites are 8x16, false if 8x8.
+        // obj_enabled: bool,
+        // bg_window_enable: bool,     // True if the background/window are enabled.
+        self.lcdc_write(
+            reader.read_u8().unwrap()
+        );
+        
+        // // LCD status register
+        // lcds: u8,
+        // // interrupt sources
+        // line_compare_is: bool,
+        // mode2_is: bool,
+        // mode1_is: bool,
+        // mode0_is: bool, 
+        // line_compare: bool,
+        // mode: Mode,
+        {
+            let lcds = reader.read_u8().unwrap();
+            self.lcds_unpack_raw(lcds);
+        }
+
+        // // scroll registers
+        // scroll_y: u8,
+        self.scroll_y = reader.read_u8().unwrap();
+        // scroll_x: u8,
+        self.scroll_x = reader.read_u8().unwrap();
+        // pub line_y: u8,
+        self.line_y = reader.read_u8().unwrap();
+        // line_compare_value: u8,
+        self.line_compare_value = reader.read_u8().unwrap();
+        // window_y: u8,
+        self.window_y = reader.read_u8().unwrap();
+        // window_x: u8,
+        self.window_x = reader.read_u8().unwrap();
+
+        // // Pallet 
+        // bg_palette: Palette,
+        self.bg_palette.update(
+            reader.read_u8().unwrap()
+        );
+        // obj_palette1: Palette,
+        self.obj_palette1.update(
+            reader.read_u8().unwrap()
+        );
+        // obj_palette2: Palette,
+        self.obj_palette2.update(
+            reader.read_u8().unwrap()
+        );
+
+        // // OAM DMA
+        // oam_dma_ticks: u8,
+        self.oam_dma_ticks = reader.read_u8().unwrap();
+        // oam_dma_src: u16,
+        self.oam_dma_src = reader.read_u16::<LittleEndian>().unwrap();
+
+        // // Misc State tracking.
+        // tick_counter: u16,
+        self.tick_counter = reader.read_u16::<LittleEndian>().unwrap();
+        // pub line_buffer: ScanlineBuffer,
+        reader.read_exact(&mut self.line_buffer.pixeldata).unwrap();
+        // pub line_pending: bool
+        self.line_pending = reader.read_u8().unwrap() != 0;
+    }
+
 }
 
 impl BusRW for PPU{
@@ -1514,5 +1689,92 @@ mod test {
 
         assert_eq!(count, 1);
         assert_eq!(sprites_list[0], 13);
+    }
+
+    #[test]
+    fn test_serialize_deserialize_loop()
+    {
+        // // // Setup a ppu to serialize // // //
+        let mut ppu_src = PPU::new();
+
+        // Populate tileset data with something.
+        for (offset, address) in (TILESET_START_ADDRESS..=TILESET_END_ADDRESS).enumerate() {
+            ppu_src.bus_write8(address, offset as u8);
+        }
+
+        // Populate tilemap data with something.
+        for (offset, address) in (TILEMAP_START_ADDRESS..=TILEMAP_END_ADDRESS).enumerate() {
+            ppu_src.bus_write8(address, offset as u8);
+        }
+
+        // Write LCDC data
+        ppu_src.lcdc_write(0xAA);
+
+        // Write LCDS data
+        ppu_src.lcds_unpack_raw(0x39);
+
+        // Palettes
+        ppu_src.bg_palette.update(0x81);
+        ppu_src.obj_palette1.update(0x7E);
+        ppu_src.obj_palette1.update(0x55);
+
+        // Sprites
+        for (offset, address) in (OAM_START_ADDRESS..=OAM_END_ADDRESS).enumerate() {
+            ppu_src.bus_write8(address, offset as u8);
+        }
+
+        // scroll registers
+        ppu_src.scroll_y = 23;
+        ppu_src.scroll_x = 185;
+        ppu_src.line_y = 3;
+        ppu_src.line_compare_value = 92;
+        ppu_src.window_y = 193;
+        ppu_src.window_x = 7;
+
+        // OAM DMA
+        ppu_src.oam_dma_ticks = 231;
+        ppu_src.oam_dma_src = 0xABCD;
+
+        // Misc State tracking.
+        ppu_src.tick_counter = 0xDEAF;
+        ppu_src.line_pending = true;
+        
+        // Populate line buffer
+        for (offset, value) in ppu_src.line_buffer.pixeldata.iter_mut().enumerate()
+        {
+            *value = offset as u8;
+        }
+
+        // // // Serialize and Deserialize // // //
+        let mut ppu_dst = PPU::new();
+        let mut buffer = [0u8; 1024*16];
+        {
+            let mut writer = &mut buffer[..];
+            ppu_src.serialize(&mut writer);
+        }
+        {
+            let mut reader = &buffer[..];
+            ppu_dst.deserialize(&mut reader);
+        }
+
+
+        // // // Check that both PPUs are equal // // // 
+        // assert_eq!(ppu_src.tile_data, ppu_dst.tile_data);
+        // assert_eq!(ppu_src.tiles, ppu_dst.tiles);
+
+        // assert_eq!(ppu_src.tilemaps, ppu_dst.tilemaps);
+
+        // assert_eq!(ppu_src.lcdc, ppu_dst.lcdc);
+        // assert_eq!(ppu_src.lcd_enabled, ppu_dst.lcd_enabled);
+        // assert_eq!(ppu_src.window_tiles_high, ppu_dst.window_tiles_high);
+        // assert_eq!(ppu_src.window_enabled, ppu_dst.window_enabled);
+        // assert_eq!(ppu_src.bg_window_signed_addressing, ppu_dst.bg_window_signed_addressing);
+        // assert_eq!(ppu_src.bg_tiles_high, ppu_dst.bg_tiles_high);
+        // assert_eq!(ppu_src.obj_double_sprites, ppu_dst.obj_double_sprites);
+        // assert_eq!(ppu_src.obj_enabled, ppu_dst.obj_enabled);
+        // assert_eq!(ppu_src.bg_window_enable, ppu_dst.bg_window_enable);
+
+        assert_eq!(ppu_src, ppu_dst);
+
     }
 }
