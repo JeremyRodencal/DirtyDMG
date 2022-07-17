@@ -237,6 +237,7 @@ fn main() {
     let mut timer = Instant::now();
     let mut quit = false;
     let mut buf = Vec::<i8>::new();
+    let mut save_state = [0u8; 1024*32];
     loop {
         while audio_queue.size() > 512 {
            std::thread::sleep(Duration::from_millis(1));
@@ -275,6 +276,14 @@ fn main() {
                         Event::KeyDown { keycode: Some(Keycode::Escape), .. } => { 
                             quit = true;
                         },
+                        Event::KeyUp {keycode: Some(Keycode::F5), ..} => {
+                            let mut writer = &mut save_state[..];
+                            dmg.serialize(&mut writer);
+                        }
+                        Event::KeyUp {keycode: Some(Keycode::F8), ..} => {
+                            let mut reader = &save_state[..];
+                            dmg.deserialize(&mut reader);
+                        }
                         Event::KeyUp   { keycode: Some(key), .. } => { 
                             terrible_input_proc(&mut dmg, key, false);
                         },
