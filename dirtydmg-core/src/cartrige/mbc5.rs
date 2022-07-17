@@ -1,12 +1,9 @@
+use byteorder::{ReadBytesExt, WriteBytesExt, LittleEndian};
+
 use super::*;
 
-enum BankMode {
-    Mode16KRom,
-    Mode4KRom,
-}
-
+#[derive(Debug, PartialEq)]
 pub struct Mbc5Cart {
-    mode: BankMode,
     rom_offset: usize,
     ram_offset: usize, 
     ram_enabled: bool,
@@ -39,7 +36,6 @@ impl Mbc5Cart {
 
     pub fn new() -> Mbc5Cart {
         let mut mapper = Mbc5Cart {
-            mode:BankMode::Mode16KRom,
             rom_offset:0,
             ram_offset:0,
             ram_enabled: false,
@@ -129,21 +125,56 @@ impl MapperRW for Mbc5Cart {
         }
     }
 
-    fn serialize(&self, _writer: &mut dyn Write) {
-        todo!();
+    fn serialize(&self, writer: &mut dyn Write) {
+        writer.write_u32::<LittleEndian>(self.rom_offset as u32).unwrap();
+        writer.write_u32::<LittleEndian>(self.ram_offset as u32).unwrap();
+        writer.write_u8(self.ram_enabled as u8).unwrap();
+        writer.write_u8(self.low_bank_bits).unwrap();
+        writer.write_u8(self.high_bank_bits).unwrap();
+        writer.write_u8(self.ram_bank).unwrap();
     }
 
-    fn deserialize(&mut self, _reader: &mut dyn Read) {
-        todo!();
+    fn deserialize(&mut self, reader: &mut dyn Read) {
+        self.rom_offset = reader.read_u32::<LittleEndian>().unwrap() as usize;
+        self.ram_offset = reader.read_u32::<LittleEndian>().unwrap() as usize;
+        self.ram_enabled = reader.read_u8().unwrap() != 0;
+        self.low_bank_bits = reader.read_u8().unwrap();
+        self.high_bank_bits = reader.read_u8().unwrap();
+        self.ram_bank = reader.read_u8().unwrap();
     }
+
 }
 
 #[cfg(test)]
 mod test {
+    use super::*;
+
     //TODO write unit tests for this module.
     #[test]
     #[ignore]
-    fn mmc1_needs_to_be_tested(){
+    fn mbc5_needs_to_be_tested(){
         assert!(false);
+    }
+
+    #[test]
+    fn serialize_deserialize_loop() {
+        let mut src = Mbc5Cart::new();
+        src.rom_offset = 0xF2343254;
+        src.ram_offset = 0x33432343;
+        src.ram_enabled = true;
+        src.low_bank_bits = 0x39;
+        src.high_bank_bits = 0xFE;
+        src.ram_bank = 0x84;
+        let src = src;
+
+        let mut dst = Mbc5Cart::new();
+        let mut buffer: Vec<u8> = Vec::new();
+        src.serialize(&mut buffer);
+        {
+            let mut reader = &buffer[..];
+            dst.deserialize(&mut reader);
+        }
+
+        assert_eq!(src, dst);
     }
 }
