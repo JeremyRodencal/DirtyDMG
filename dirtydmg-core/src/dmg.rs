@@ -13,10 +13,11 @@ use crate::sound::Apu;
 
 //DEBUG! should not stay!
 use std::io::stdout;
-use std::io::Write;
+use std::io::{Write, Read};
 
 pub struct Dmg{
     pub cpu:Cpu,
+    zero_page: Rc<RefCell<Ram>>,
     ram: Rc<RefCell<Ram>>,
     bus: Bus,
     isr: Rc<RefCell<InterruptStatus>>,
@@ -56,7 +57,7 @@ impl Dmg {
         bus.add_item(BusItem::new(0xFF0F, 0xFF0F, isr.clone()));
         bus.add_item(BusItem::new(0xFF10, 0xFF3F, apu.clone()));
         bus.add_item(BusItem::new(0xFF40, 0xFF4B, ppu.clone()));
-        bus.add_item(BusItem::new(0xFF80, 0xFFFE, zero_page));
+        bus.add_item(BusItem::new(0xFF80, 0xFFFE, zero_page.clone()));
         bus.add_item(BusItem::new(0xFFFF, 0xFFFF, isr.clone()));
 
         let mut cpu = Cpu::new();
@@ -70,6 +71,7 @@ impl Dmg {
         cpu.reg.sp = 0xFFFE;
         Dmg {
             cpu,
+            zero_page,
             ram,
             bus,
             isr,
@@ -123,6 +125,32 @@ impl Dmg {
         } else {
             self.gamepad.as_ref().borrow_mut().release_btn(btn);
         }
+    }
+
+    pub fn serialize<T>(&self, writer: &mut T)
+        where T: Write
+    {
+        // Serialize ram items into the writer.
+        self.zero_page.as_ref().borrow().serialize(writer);
+        self.ram.as_ref().borrow().serialize(writer);
+        self.cpu.serialize(writer);
+        self.isr.as_ref().borrow().serialize(writer);
+        self.cart.as_ref().borrow().serialize(writer);
+        self.ppu.as_ref().borrow().serialize(writer);
+        self.tu.as_ref().borrow().serialize(writer);
+    }
+
+    pub fn deserialize<T>(&mut self, reader: &mut T)
+        where T: Read 
+    {
+        // Serialize ram items into the writer.
+        self.zero_page.as_ref().borrow_mut().deserialize(reader);
+        self.ram.as_ref().borrow_mut().deserialize(reader);
+        self.cpu.deserialize(reader);
+        self.isr.as_ref().borrow_mut().deserialize(reader);
+        self.cart.as_ref().borrow_mut().deserialize(reader);
+        self.ppu.as_ref().borrow_mut().deserialize(reader);
+        self.tu.as_ref().borrow_mut().deserialze(reader);
     }
 }
 
