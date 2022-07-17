@@ -1,11 +1,14 @@
 use crate::bus::BusRW;
 use crate::interrupt::InterruptStatus;
+use std::io::{Write, Read};
+use byteorder::{ReadBytesExt, WriteBytesExt, LittleEndian};
 
 const DIV_REG_ADDR:usize  = 0xFF04;
 const TIMA_REG_ADDR:usize = 0xFF05;
 const TMA_REG_ADDR:usize  = 0xFF06;
 const TAC_REG_ADDR:usize  = 0xFF07;
 
+#[derive(Debug, PartialEq)]
 pub struct TimerUnit {
     // Raw registers
     div:u8,
@@ -66,6 +69,49 @@ impl TimerUnit {
             }
         }
     }
+
+    pub fn tac_write(&mut self, value: u8) {
+        self.tac = value;
+        self.ticks_per_inc = 
+            match value & 0b11 {
+                0 => 1024,
+                1 => 16,
+                2 => 64,
+                3 => 256,
+                _ => {0}
+            };
+        self.enabled = value & 0b100 != 0;
+
+        // println!("Timer enabled: {}", self.enabled);
+        // println!("Timer rate: {}", self.ticks_per_inc);
+    }
+
+    pub fn serialize<T>(&self, writer: &mut T)
+        where T : Write + ?Sized
+    {
+        // Raw registers
+        writer.write_u8(self.div).unwrap();
+        writer.write_u8(self.tima).unwrap();
+        writer.write_u8(self.tma).unwrap();
+        writer.write_u8(self.tac).unwrap();
+
+        // Timing functions.
+        writer.write_u16::<LittleEndian>(self.tima_inc_counter).unwrap();
+        writer.write_u16::<LittleEndian>(self.div_inc_counter).unwrap();
+    }
+
+    pub fn deserialze<T>(&mut self, reader: &mut T) 
+        where T : Read + ?Sized
+    {
+        self.div = reader.read_u8().unwrap();
+        self.tima = reader.read_u8().unwrap(); 
+        self.tma  = reader.read_u8().unwrap();
+        self.tac_write(reader.read_u8().unwrap());
+
+        // Timing functions.
+        self.tima_inc_counter = reader.read_u16::<LittleEndian>().unwrap();
+        self.div_inc_counter  = reader.read_u16::<LittleEndian>().unwrap();
+    }
 }
 
 impl BusRW for TimerUnit {
@@ -83,19 +129,7 @@ impl BusRW for TimerUnit {
                 self.tma = value;
             }
             TAC_REG_ADDR => {
-                self.tac = value;
-                self.ticks_per_inc = 
-                    match value & 0b11 {
-                        0 => 1024,
-                        1 => 16,
-                        2 => 64,
-                        3 => 256,
-                        _ => {0}
-                    };
-                self.enabled = value & 0b100 != 0;
-
-                println!("Timer enabled: {}", self.enabled);
-                println!("Timer rate: {}", self.ticks_per_inc);
+                self.tac_write(value);
             }
             _ => {panic!("TimerUnit: Unknown read at address {:#X}", addr);}
        } 
