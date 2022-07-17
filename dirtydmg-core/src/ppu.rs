@@ -44,7 +44,7 @@ const OAM_SPRITE_SIZE: usize = 4;
 /// The amount of ram used for OAM.
 const OAM_RAM_SIZE:usize = OAM_SPRITE_COUNT * OAM_SPRITE_SIZE;
 const OAM_START_ADDRESS:usize = 0xFE00;
-const OAM_END_ADDRESS:usize = OAM_START_ADDRESS + OAM_RAM_SIZE;
+const OAM_END_ADDRESS:usize = OAM_START_ADDRESS + (OAM_RAM_SIZE-1);
 
 // LCD Registers
 const LCDC_ADDRESS:usize = 0xFF40;
@@ -1090,7 +1090,7 @@ mod test {
         // Write the sprite data to the first and last sprite
         for (i, value) in ref_sprite_data.iter().enumerate() {
             ppu.bus_write8(OAM_START_ADDRESS + i, *value);
-            ppu.bus_write8(OAM_END_ADDRESS - OAM_SPRITE_SIZE + i, *value);
+            ppu.bus_write8(OAM_END_ADDRESS - (OAM_SPRITE_SIZE-1) + i, *value);
         }
 
         assert_eq!(ref_sprite, ppu.sprites[0]);

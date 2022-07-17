@@ -49,6 +49,7 @@ impl Dmg {
         bus.add_item(BusItem::new(0x8000, 0x9FFF, ppu.clone()));
         bus.add_item(BusItem::new(0xA000, 0xBFFF, cart.clone()));
         bus.add_item(BusItem::new(0xC000, 0xDFFF, ram.clone()));
+        bus.add_item(BusItem::new(0xFE00, 0xFE9F, ppu.clone()));
         bus.add_item(BusItem::new(0xFF00, 0xFF00, gamepad.clone()));
         //bus.add_item(BusItem::new(0xFF01, 0xFF02, stu.clone()));
         bus.add_item(BusItem::new(0xFF04, 0xFF07, tu.clone()));
