@@ -1,5 +1,8 @@
+use std::io::{Read, Write};
+use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use crate::bus::BusRW;
 
+#[derive(PartialEq, Debug)]
 pub struct Channel3{
     // Raw control registers
     pub nr30: u8,
@@ -177,6 +180,50 @@ impl Channel3 {
         }
         sample
     }
+
+    pub fn serialize<T>(&self, writer: &mut T)
+        where T: Write + ?Sized
+    {
+        // Raw control registers
+        writer.write_u8(self.nr30).unwrap();
+        writer.write_u8(self.nr31).unwrap();
+        writer.write_u8(self.nr32).unwrap();
+        writer.write_u8(self.nr33).unwrap();
+        writer.write_u8(self.nr34).unwrap();
+
+        writer.write_all(&self.sample_data).unwrap();
+
+        writer.write_u16::<LittleEndian>(self.length_counter).unwrap();
+        writer.write_u16::<LittleEndian>(self.freq_counter_mod).unwrap();
+        writer.write_u16::<LittleEndian>(self.freq_counter).unwrap();
+        writer.write_u8(self.sample_index).unwrap();
+
+        writer.write_i8(self.output).unwrap();
+        writer.write_u8(self.current_volume).unwrap();
+        writer.write_u8(self.enabled as u8).unwrap();
+    }
+
+    pub fn deserialize<T>(&mut self, reader: &mut T)
+        where T: Read + ?Sized
+    {
+        // Raw control registers
+        self.nr30 = reader.read_u8().unwrap();
+        self.nr31 = reader.read_u8().unwrap();
+        self.nr32 = reader.read_u8().unwrap();
+        self.nr33 = reader.read_u8().unwrap();
+        self.nr34 = reader.read_u8().unwrap();
+
+        // Sample data
+        reader.read_exact(&mut self.sample_data).unwrap();
+
+        self.length_counter = reader.read_u16::<LittleEndian>().unwrap();
+        self.freq_counter_mod = reader.read_u16::<LittleEndian>().unwrap();
+        self.freq_counter = reader.read_u16::<LittleEndian>().unwrap();
+        self.sample_index = reader.read_u8().unwrap();
+        self.output = reader.read_i8().unwrap();
+        self.current_volume = reader.read_u8().unwrap();
+        self.enabled = reader.read_u8().unwrap() != 0;
+    }
 }
 
 impl BusRW for Channel3{
@@ -204,5 +251,50 @@ impl BusRW for Channel3{
 impl Default for Channel3{
     fn default() -> Self{
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn serialize_deserialize_loop()
+    {
+        let mut src = Channel3::new();
+        src.nr30 = 1;
+        src.nr31 = 2;
+        src.nr32 = 3;
+        src.nr33 = 4;
+        src.nr34 = 5;
+        src.sample_data
+            .iter_mut()
+            .enumerate()
+            .for_each(|(i, x)|{
+                *x = i as u8;
+            });
+
+        src.length_counter = 6;
+        src.freq_counter_mod = 8;
+        src.freq_counter = 9;
+        src.sample_index = 11;
+
+        src.output = 13;
+        src.current_volume = 14;
+        src.enabled = true;
+        let src = src;
+
+        // Serialize src
+        let mut data_buffer:Vec<u8> = Vec::new();
+        src.serialize(&mut data_buffer);
+
+        // Deserialize dst
+        let mut dst = Channel3::new();
+        {
+            let mut reader = &data_buffer[..];
+            dst.deserialize(&mut reader);
+        }
+
+        assert_eq!(src, dst);
     }
 }

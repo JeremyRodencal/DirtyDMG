@@ -1,3 +1,5 @@
+use std::io::{Read,Write};
+use byteorder::{ReadBytesExt, WriteBytesExt, LittleEndian};
 mod channel1;
 mod channel2;
 mod channel3;
@@ -253,6 +255,43 @@ impl Apu {
         let channel = channel as usize;
         self.ch_user_enable[channel as usize] = !self.ch_user_enable[channel as usize];
     }
+
+    pub fn serialize<T>(&self, writer:&mut T)
+        where T: Write + ?Sized
+    {
+        self.ch1.serialize(writer);
+        self.ch2.serialize(writer);
+        self.ch3.serialize(writer);
+        self.ch4.serialize(writer);
+        self.ctrl.serialize(writer);
+
+        writer.write_u16::<LittleEndian>(self.frame_sequence_counter).unwrap();
+        writer.write_u16::<LittleEndian>(self.frame_length_counter).unwrap();
+        writer.write_u16::<LittleEndian>(self.frame_envelope_counter).unwrap();
+        writer.write_u16::<LittleEndian>(self.frame_sweep_counter).unwrap();
+
+        writer.write_u16::<LittleEndian>(self.subtick_counter).unwrap();
+        writer.write_u16::<LittleEndian>(self.sample_ticks).unwrap();
+    }
+
+    pub fn deserialize<T>(&mut self, reader:&mut T)
+        where T: Read + ?Sized
+    {
+        self.ch1.deserialize(reader);
+        self.ch2.deserialize(reader);
+        self.ch3.deserialize(reader);
+        self.ch4.deserialize(reader);
+        self.ctrl.deserialize(reader);
+
+        self.frame_sequence_counter = reader.read_u16::<LittleEndian>().unwrap();
+        self.frame_length_counter = reader.read_u16::<LittleEndian>().unwrap();
+        self.frame_envelope_counter = reader.read_u16::<LittleEndian>().unwrap();
+        self.frame_sweep_counter = reader.read_u16::<LittleEndian>().unwrap();
+
+        self.subtick_counter = reader.read_u16::<LittleEndian>().unwrap();
+        self.sample_ticks = reader.read_u16::<LittleEndian>().unwrap();
+    }
+        
 }
 
 impl BusRW for Apu {

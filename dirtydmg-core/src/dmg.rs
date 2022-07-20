@@ -138,6 +138,7 @@ impl Dmg {
         self.cart.as_ref().borrow().serialize(writer);
         self.ppu.as_ref().borrow().serialize(writer);
         self.tu.as_ref().borrow().serialize(writer);
+        self.apu.as_ref().borrow().serialize(writer);
     }
 
     pub fn deserialize<T>(&mut self, reader: &mut T)
@@ -151,6 +152,7 @@ impl Dmg {
         self.cart.as_ref().borrow_mut().deserialize(reader);
         self.ppu.as_ref().borrow_mut().deserialize(reader);
         self.tu.as_ref().borrow_mut().deserialze(reader);
+        self.apu.as_ref().borrow_mut().deserialize(reader);
     }
 }
 
