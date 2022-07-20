@@ -1,5 +1,8 @@
+use std::io::{Read, Write};
+use byteorder::{ReadBytesExt, WriteBytesExt};
 use super::{AudioChannel, AudioOutput};
 
+#[derive(PartialEq, Debug)]
 pub struct ApuControl {
     pub nr50: u8,
     pub nr51: u8,
@@ -68,10 +71,52 @@ impl ApuControl {
         }
     }
 
+    pub fn serialize<T>(&self, writer: &mut T)
+        where T: Write + ?Sized
+    {
+        writer.write_u8(self.nr50).unwrap();
+        writer.write_u8(self.nr51).unwrap();
+        writer.write_u8(self.nr52).unwrap();
+    }
+
+    pub fn deserialize<T>(&mut self, reader: &mut T)
+        where T: Read + ?Sized
+    {
+        self.nr50 = reader.read_u8().unwrap();
+        self.nr51 = reader.read_u8().unwrap();
+        self.nr52 = reader.read_u8().unwrap();
+    }
+
 }
 
 impl Default for ApuControl {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn serialize_deserialize_loop()
+    {
+        let mut src = ApuControl::new();
+        src.nr50 = 1;
+        src.nr51 = 2;
+        src.nr52 = 3;
+        let src = src;
+
+        let mut dst = ApuControl::new();
+        let mut data_buffer:Vec<u8> = Vec::new();
+        src.serialize(&mut data_buffer);
+        {
+            let mut reader = &data_buffer[..];
+            dst.deserialize(&mut reader);
+        }
+
+        assert_eq!(src, dst);
     }
 }

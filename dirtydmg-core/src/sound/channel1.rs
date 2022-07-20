@@ -1,3 +1,7 @@
+use std::io::{Write, Read};
+use byteorder::{WriteBytesExt, ReadBytesExt, LittleEndian};
+
+#[derive(PartialEq, Debug)]
 pub struct Channel1{
     // Raw control registers
     pub nr10: u8,
@@ -267,10 +271,94 @@ impl Channel1 {
         }
         sample
     }
+
+    pub fn serialize<T>(&self, writer: &mut T)
+        where T: Write + ?Sized
+    {
+        // Raw control registers
+        writer.write_u8(self.nr10).unwrap();
+        writer.write_u8(self.nr11).unwrap();
+        writer.write_u8(self.nr12).unwrap();
+        writer.write_u8(self.nr13).unwrap();
+        writer.write_u8(self.nr14).unwrap();
+
+        // Shouldn't need to be public...
+        writer.write_u16::<LittleEndian>(self.length_counter).unwrap();
+        writer.write_u8(self.envelope_counter).unwrap();
+        writer.write_u16::<LittleEndian>(self.freq_counter_mod).unwrap();
+        writer.write_u16::<LittleEndian>(self.freq_counter).unwrap();
+        writer.write_u16::<LittleEndian>(self.freq_shadow).unwrap();
+        writer.write_u8(self.duty_pos).unwrap();
+        writer.write_i8(self.sweep_counter).unwrap();
+        writer.write_u8(self.output).unwrap();
+        writer.write_u8(self.current_volume).unwrap();
+        writer.write_u8(self.enabled as u8).unwrap();
+    }
+
+    pub fn deserialize<T>(&mut self, reader: &mut T)
+        where T: Read + ?Sized
+    {
+        // Raw control registers
+        self.nr10 = reader.read_u8().unwrap();
+        self.nr11 = reader.read_u8().unwrap();
+        self.nr12 = reader.read_u8().unwrap();
+        self.nr13 = reader.read_u8().unwrap();
+        self.nr14 = reader.read_u8().unwrap();
+
+        // Shouldn't need to be public...
+        self.length_counter = reader.read_u16::<LittleEndian>().unwrap();
+        self.envelope_counter = reader.read_u8().unwrap();
+        self.freq_counter_mod = reader.read_u16::<LittleEndian>().unwrap();
+        self.freq_counter = reader.read_u16::<LittleEndian>().unwrap();
+        self.freq_shadow = reader.read_u16::<LittleEndian>().unwrap();
+        self.duty_pos = reader.read_u8().unwrap();
+        self.sweep_counter = reader.read_i8().unwrap();
+        self.output = reader.read_u8().unwrap();
+        self.current_volume = reader.read_u8().unwrap();
+        self.enabled = reader.read_u8().unwrap() != 0;
+    }
+
 }
 
 impl Default for Channel1{
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn serialize_deserialize_loop()
+    {
+        let mut src = Channel1::new();
+        src.nr10 = 1;
+        src.nr11 = 2;
+        src.nr12 = 3;
+        src.nr13 = 4;
+        src.nr14 = 5;
+        src.length_counter = 6;
+        src.envelope_counter = 7;
+        src.freq_counter_mod = 8;
+        src.freq_counter = 9;
+        src.freq_shadow = 10;
+        src.duty_pos = 11;
+        src.sweep_counter = 12;
+        src.output = 13;
+        src.current_volume = 14;
+        src.enabled = true;
+        let src = src;
+
+        let mut dst = Channel1::new();
+        let mut data_buffer:Vec<u8> = Vec::new();
+        src.serialize(&mut data_buffer);
+        {
+            let mut reader = &data_buffer[..];
+            dst.deserialize(&mut reader);
+        }
+
+        assert_eq!(src, dst);
     }
 }
