@@ -587,9 +587,9 @@ impl PPU {
 
                     // Trigger interrupts
                     is.request_vblank();
-                    // if self.mode1_is {
-                    //     is.request_lcdstat();
-                    // }
+                    if self.mode1_is {
+                        self.stat_block.mode_1_active = true;
+                    }
                 }
                 // start of new frame.
                 if self.line_y > PPU::LCD_LINE_VBLANK_END {
@@ -624,48 +624,34 @@ impl PPU {
                     }
                 };
 
-                // // If there was a mode change, set any interrupts.
-                // if new_mode != self.mode {
-                //     self.mode = new_mode;
-                //     match new_mode {
-                //         Mode::SpriteSearch => {
-                //             if self.mode2_is{
-                //                 is.request_lcdstat();
-                //             }
-                //         }
-                //         Mode::HBlank => {
-                //             if self.mode0_is {
-                //                 is.request_lcdstat();
-                //             }
-                //         }
-                //         _ => {}
-                //     }
-                // }
-
                 // If there was a mode change, set any interrupts.
-                self.mode = new_mode;
-                match self.mode {
-                    Mode::SpriteSearch => {
-                        if self.mode2_is{
-                            self.stat_block.mode_2_active = true;
+                if new_mode != self.mode {
+                    self.mode = new_mode;
+                    match self.mode {
+                        Mode::SpriteSearch => {
+                            if self.mode2_is{
+                                self.stat_block.mode_2_active = true;
+                            }
                         }
-                    }
-                    Mode::HBlank => {
-                        if self.mode0_is {
-                            self.stat_block.mode_0_active = true;
+                        Mode::HBlank => {
+                            if self.mode0_is {
+                                self.stat_block.mode_0_active = true;
+                            }
                         }
-                    }
-                    Mode::VBlank => {
-                        if self.mode1_is{
-                            self.stat_block.mode_1_active = true;
+                        Mode::VBlank => {
+                            if self.mode1_is{
+                                self.stat_block.mode_1_active = true;
+                            }
                         }
-                    }
-                    Mode::LcdTransfer =>{
-                        // Nothing to do.
+                        Mode::LcdTransfer =>{
+                            if self.mode2_is{
+                                self.stat_block.mode_2_active = true;
+                            }
+                        }
                     }
                 }
-                self.stat_block.update_interrupt_status(is);
             }
+            self.stat_block.update_interrupt_status(is);
         }
     }
 
