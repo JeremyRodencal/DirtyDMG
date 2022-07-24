@@ -65,6 +65,47 @@ const BG_PALETTE_ADDRESS:usize = 0xFF47;
 const OBJ_PALETTE1_ADDRESS:usize = 0xFF48;
 const OBJ_PALETTE2_ADDRESS:usize = 0xFF49;
 
+#[derive(PartialEq, Debug)]
+struct LcdStatTracking
+{
+    pub line_compare_active:bool,
+    pub mode_0_active:bool,
+    pub mode_1_active:bool,
+    pub mode_2_active:bool,
+    pub last_active_state:bool,
+}
+
+impl LcdStatTracking{
+    fn new()-> LcdStatTracking{
+        LcdStatTracking { 
+            line_compare_active: false, 
+            mode_0_active:  false,
+            mode_1_active: false, 
+            mode_2_active: false, 
+            last_active_state: false
+        }
+    }
+
+    fn update_interrupt_status(&mut self, is: &mut InterruptStatus)
+    {
+        // Determine if any LCDStat interupt source is active.
+        let is_active = 
+            self.line_compare_active || 
+            self.mode_0_active || 
+            self.mode_1_active || 
+            self.mode_2_active;
+
+        // If LDCStat has become active
+        if is_active && (self.last_active_state == false)
+        {
+            is.request_lcdstat();
+        }
+
+        self.last_active_state = is_active;
+    }
+
+}
+
 #[derive(Clone, Copy, PartialEq, Debug)]
 /// Structure to hold tile pixel data in an easily accessable format.
 struct Tile {
@@ -231,6 +272,9 @@ pub struct PPU {
     mode0_is: bool, 
     line_compare: bool,
     mode: Mode,
+
+    // Tracks things that set LCDstat, and sets interrupts.
+    stat_block: LcdStatTracking,
 
     // scroll registers
     scroll_y: u8,
@@ -507,6 +551,11 @@ impl PPU {
     pub fn execute_ticks(&mut self, ticks:u16, bus:&mut impl BusRW, is: &mut InterruptStatus){
         self.update_dma(ticks, bus);
 
+        self.stat_block.line_compare_active = false;
+        self.stat_block.mode_0_active = false;
+        self.stat_block.mode_1_active = false;
+        self.stat_block.mode_2_active = false;
+
         // TODO this is really, Really, REALLY wildly inacurate.
         if self.lcd_enabled{
             self.tick_counter += ticks;
@@ -524,7 +573,11 @@ impl PPU {
                 self.line_y += 1;
                 self.line_compare = self.line_compare_value == self.line_y;
                 if self.line_compare && self.line_compare_is {
-                    is.request_lcdstat();
+                    // is.request_lcdstat();
+                    self.stat_block.line_compare_active = true;
+                }
+                else {
+                    self.stat_block.line_compare_active = false;
                 }
 
                 // if start of vblank
@@ -534,17 +587,20 @@ impl PPU {
 
                     // Trigger interrupts
                     is.request_vblank();
-                    if self.mode1_is {
-                        is.request_lcdstat();
-                    }
+                    // if self.mode1_is {
+                    //     is.request_lcdstat();
+                    // }
                 }
-
                 // start of new frame.
                 if self.line_y > PPU::LCD_LINE_VBLANK_END {
                     self.line_y = 0;
                     self.line_compare = self.line_compare_value == self.line_y;
                     if self.line_compare && self.line_compare_is {
-                        is.request_lcdstat();
+                        // is.request_lcdstat();
+                        self.stat_block.line_compare_active = true;
+                    }
+                    else{
+                        self.stat_block.line_compare_active = false;
                     }
                     self.mode = Mode::SpriteSearch;
                 }
@@ -568,23 +624,47 @@ impl PPU {
                     }
                 };
 
+                // // If there was a mode change, set any interrupts.
+                // if new_mode != self.mode {
+                //     self.mode = new_mode;
+                //     match new_mode {
+                //         Mode::SpriteSearch => {
+                //             if self.mode2_is{
+                //                 is.request_lcdstat();
+                //             }
+                //         }
+                //         Mode::HBlank => {
+                //             if self.mode0_is {
+                //                 is.request_lcdstat();
+                //             }
+                //         }
+                //         _ => {}
+                //     }
+                // }
+
                 // If there was a mode change, set any interrupts.
-                if new_mode != self.mode {
-                    self.mode = new_mode;
-                    match new_mode {
-                        Mode::SpriteSearch => {
-                            if self.mode2_is{
-                                is.request_lcdstat();
-                            }
+                self.mode = new_mode;
+                match self.mode {
+                    Mode::SpriteSearch => {
+                        if self.mode2_is{
+                            self.stat_block.mode_2_active = true;
                         }
-                        Mode::HBlank => {
-                            if self.mode0_is {
-                                is.request_lcdstat();
-                            }
+                    }
+                    Mode::HBlank => {
+                        if self.mode0_is {
+                            self.stat_block.mode_0_active = true;
                         }
-                        _ => {}
+                    }
+                    Mode::VBlank => {
+                        if self.mode1_is{
+                            self.stat_block.mode_1_active = true;
+                        }
+                    }
+                    Mode::LcdTransfer =>{
+                        // Nothing to do.
                     }
                 }
+                self.stat_block.update_interrupt_status(is);
             }
         }
     }
@@ -620,6 +700,7 @@ impl PPU {
             mode0_is: false, 
             line_compare: false,
             mode: Mode::HBlank,
+            stat_block: LcdStatTracking::new(),
             bg_palette: Palette::new(),
             obj_palette1: Palette::new(),
             obj_palette2: Palette::new(),
