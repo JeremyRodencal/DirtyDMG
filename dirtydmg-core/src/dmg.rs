@@ -100,8 +100,8 @@ impl Dmg {
 
     pub fn update(&mut self) {
 
-        self.cpu.handle_interrupts(&mut self.bus, &mut self.isr.as_ref().borrow_mut());
         let cycles = self.cpu.update(&mut self.bus);
+        self.cpu.handle_interrupts(&mut self.bus, &mut self.isr.as_ref().borrow_mut());
         self.ppu.as_ref().borrow_mut().execute_ticks(cycles as u16 * 4, &mut self.bus, &mut self.isr.as_ref().borrow_mut());
         {
             let mut stu = self.stu.as_ref().borrow_mut();
