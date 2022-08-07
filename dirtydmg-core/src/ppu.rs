@@ -65,6 +65,69 @@ const BG_PALETTE_ADDRESS:usize = 0xFF47;
 const OBJ_PALETTE1_ADDRESS:usize = 0xFF48;
 const OBJ_PALETTE2_ADDRESS:usize = 0xFF49;
 
+#[derive(PartialEq, Debug)]
+struct LcdStatTracking
+{
+    pub line_compare_active:bool,
+    pub mode_0_active:bool,
+    pub mode_1_active:bool,
+    pub mode_2_active:bool,
+    pub last_active_state:bool,
+}
+
+impl LcdStatTracking{
+    fn new()-> LcdStatTracking{
+        LcdStatTracking { 
+            line_compare_active: false, 
+            mode_0_active:  false,
+            mode_1_active: false, 
+            mode_2_active: false, 
+            last_active_state: false
+        }
+    }
+
+    fn update_interrupt_status(&mut self, is: &mut InterruptStatus)
+    {
+        // Determine if any LCDStat interupt source is active.
+        let is_active = 
+            self.line_compare_active || 
+            self.mode_0_active || 
+            self.mode_1_active || 
+            self.mode_2_active;
+
+        // If LDCStat has become active
+        if is_active && (self.last_active_state == false)
+        {
+            is.request_lcdstat();
+        }
+
+        self.last_active_state = is_active;
+    }
+
+    /// # Serialize PPU state into a writer
+    pub fn serialize<T>(& self, writer: &mut T) 
+        where T : Write + ?Sized
+    {
+        writer.write_u8(self.line_compare_active as u8).unwrap();
+        writer.write_u8(self.mode_0_active as u8).unwrap();
+        writer.write_u8(self.mode_1_active as u8).unwrap();
+        writer.write_u8(self.mode_2_active as u8).unwrap();
+        writer.write_u8(self.last_active_state as u8).unwrap();
+    }
+
+    /// # Load ppu state from a reader
+    pub fn deserialize<T>(&mut self, reader: &mut T)
+        where T: Read + ?Sized
+    {
+        self.line_compare_active = reader.read_u8().unwrap() != 0;
+        self.mode_0_active = reader.read_u8().unwrap() != 0;
+        self.mode_1_active = reader.read_u8().unwrap() != 0;
+        self.mode_2_active = reader.read_u8().unwrap() != 0;
+        self.last_active_state = reader.read_u8().unwrap() != 0;
+    }
+
+}
+
 #[derive(Clone, Copy, PartialEq, Debug)]
 /// Structure to hold tile pixel data in an easily accessable format.
 struct Tile {
@@ -231,6 +294,9 @@ pub struct PPU {
     mode0_is: bool, 
     line_compare: bool,
     mode: Mode,
+
+    // Tracks things that set LCDstat, and sets interrupts.
+    stat_block: LcdStatTracking,
 
     // scroll registers
     scroll_y: u8,
@@ -523,9 +589,6 @@ impl PPU {
                 self.tick_counter -= PPU::LCD_TICKS_PER_LINE;
                 self.line_y += 1;
                 self.line_compare = self.line_compare_value == self.line_y;
-                if self.line_compare && self.line_compare_is {
-                    is.request_lcdstat();
-                }
 
                 // if start of vblank
                 if self.line_y == PPU::LCD_LINE_VBLANK_START {
@@ -534,18 +597,11 @@ impl PPU {
 
                     // Trigger interrupts
                     is.request_vblank();
-                    if self.mode1_is {
-                        is.request_lcdstat();
-                    }
                 }
 
                 // start of new frame.
                 if self.line_y > PPU::LCD_LINE_VBLANK_END {
                     self.line_y = 0;
-                    self.line_compare = self.line_compare_value == self.line_y;
-                    if self.line_compare && self.line_compare_is {
-                        is.request_lcdstat();
-                    }
                     self.mode = Mode::SpriteSearch;
                 }
             }
@@ -553,7 +609,7 @@ impl PPU {
             // If we are not in vblank
             if self.line_y < PPU::LCD_LINE_VBLANK_START {
                 
-                let new_mode = match self.tick_counter {
+                self.mode = match self.tick_counter {
                     // Mode 2 - OAM_SCAN
                     0..=79 => {
                         Mode::SpriteSearch
@@ -567,25 +623,34 @@ impl PPU {
                         Mode::HBlank
                     }
                 };
+            }
 
-                // If there was a mode change, set any interrupts.
-                if new_mode != self.mode {
-                    self.mode = new_mode;
-                    match new_mode {
-                        Mode::SpriteSearch => {
-                            if self.mode2_is{
-                                is.request_lcdstat();
-                            }
-                        }
-                        Mode::HBlank => {
-                            if self.mode0_is {
-                                is.request_lcdstat();
-                            }
-                        }
-                        _ => {}
-                    }
+            // Check for mode lcds interrupts.
+            self.stat_block.mode_0_active = false;
+            self.stat_block.mode_1_active = false;
+            self.stat_block.mode_2_active = false;
+            match self.mode {
+                Mode::HBlank => {
+                    self.stat_block.mode_0_active = self.mode0_is;
+                }
+                Mode::VBlank => {
+                    self.stat_block.mode_1_active = self.mode1_is;
+                }
+                Mode::SpriteSearch => {
+                    self.stat_block.mode_2_active = self.mode2_is;
+                }
+                Mode::LcdTransfer => {
+                    // Nothing to do, no isr's here.
                 }
             }
+
+            // Update line compare, and check for interrupts.
+            self.line_compare = self.line_y == self.line_compare_value;
+            self.stat_block.line_compare_active = 
+                self.line_compare && self.line_compare_is;
+
+            // Trigger any new lcds interrupts.
+            self.stat_block.update_interrupt_status(is);
         }
     }
 
@@ -620,6 +685,7 @@ impl PPU {
             mode0_is: false, 
             line_compare: false,
             mode: Mode::HBlank,
+            stat_block: LcdStatTracking::new(),
             bg_palette: Palette::new(),
             obj_palette1: Palette::new(),
             obj_palette2: Palette::new(),
@@ -770,6 +836,7 @@ impl PPU {
         writer.write_all(&self.sprite_data).unwrap();
         writer.write_u8(self.lcdc).unwrap();
         writer.write_u8(self.lcds_read()).unwrap();
+        self.stat_block.serialize(writer);
         writer.write_u8(self.scroll_y).unwrap();
         writer.write_u8(self.scroll_x).unwrap();
         writer.write_u8(self.line_y).unwrap();
@@ -856,6 +923,7 @@ impl PPU {
             let lcds = reader.read_u8().unwrap();
             self.lcds_unpack_raw(lcds);
         }
+        self.stat_block.deserialize(reader);
 
         // // scroll registers
         // scroll_y: u8,
@@ -1147,10 +1215,13 @@ mod test {
     }
 
     #[test]
-    #[ignore]
     fn test_ly_read(){
-        // TODO - this must return the current line once rendering functionality is in place.
-        assert_eq!(1,2);
+        let (mut ppu, mut ram, mut is) = test_pack();
+        for line in 0u8..154
+        {
+            assert_eq!(line, ppu.line_y);
+            ppu.run(PPU::LCD_TICKS_PER_LINE, &mut ram, &mut is);
+        }
     }
 
     #[test]
@@ -1712,6 +1783,11 @@ mod test {
 
         // Write LCDS data
         ppu_src.lcds_unpack_raw(0x39);
+        ppu_src.stat_block.mode_0_active = true;
+        ppu_src.stat_block.mode_1_active = false;
+        ppu_src.stat_block.mode_2_active = true;
+        ppu_src.stat_block.line_compare_active = false;
+        ppu_src.stat_block.last_active_state = false;
 
         // Palettes
         ppu_src.bg_palette.update(0x81);
