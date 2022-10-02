@@ -985,7 +985,14 @@ impl BusRW for PPU{
 
             // Object attribute memory read
             OAM_START_ADDRESS..=OAM_END_ADDRESS => {
-                self.sprite_data[addr - OAM_START_ADDRESS]
+                // If a DMA transfer is active, 
+                if self.dma_active() {
+                    0xFF
+                }
+                // DMA is not active, normal operation.
+                else {
+                    self.sprite_data[addr - OAM_START_ADDRESS]
+                }
             },
 
             // Individual registers
@@ -1024,7 +1031,10 @@ impl BusRW for PPU{
 
             // OAM memory write.
             OAM_START_ADDRESS..=OAM_END_ADDRESS => {
-                self.sprite_write(value, addr);
+                // Cannot write if DMA is active.
+                if self.dma_active() == false{
+                    self.sprite_write(value, addr);
+                }
             }
 
             // LCD control register
@@ -1378,9 +1388,22 @@ mod test {
     }
 
     #[test]
-    #[ignore]
     fn test_dma_memory_lock() {
-        panic!("test_dma_memory_lock is not implemented");
+        // Given a PPU with a running DMA transfer
+        let (mut ppu, mut ram, mut is) = test_pack();
+        ppu.bus_write8(OAM_DMA_REGISTER_ADDRESS, 0);
+        ppu.execute_ticks(7, &mut ram, &mut is);
+
+        // OAM reads and writes are blocked.
+        ppu.bus_write8(OAM_START_ADDRESS, 0xAA);
+        assert_eq!(ppu.bus_read8(OAM_START_ADDRESS), 0xFF);
+
+        // But when the DMA transfer expires
+        ppu.execute_ticks(200, &mut ram, &mut is);
+
+        // Writes work again.
+        ppu.bus_write8(OAM_START_ADDRESS, 0xAA);
+        assert_eq!(ppu.bus_read8(OAM_START_ADDRESS), 0xAA);
     }
 
     #[test]
