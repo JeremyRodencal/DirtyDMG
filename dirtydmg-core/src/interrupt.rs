@@ -2,7 +2,7 @@ use crate::bus::BusRW;
 use byteorder::{WriteBytesExt, ReadBytesExt};
 use std::io::{Read, Write};
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Eq, Debug)]
 pub struct InterruptStatus {
     /// Interrupt status request byte. Use the assorted XXX_MASK constants to check for requests.
     pub isrreq: u8,

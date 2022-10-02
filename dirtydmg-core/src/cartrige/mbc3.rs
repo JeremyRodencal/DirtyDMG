@@ -2,7 +2,7 @@ use byteorder::{ReadBytesExt, WriteBytesExt, LittleEndian};
 
 use super::*;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Mbc3Cart {
     rom_offset: usize,
     ram_offset: usize, 

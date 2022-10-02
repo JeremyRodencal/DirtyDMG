@@ -2,7 +2,7 @@ use std::io::{Read, Write};
 use byteorder::{ReadBytesExt, WriteBytesExt};
 use super::{AudioChannel, AudioOutput};
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Eq, Debug)]
 pub struct ApuControl {
     pub nr50: u8,
     pub nr51: u8,

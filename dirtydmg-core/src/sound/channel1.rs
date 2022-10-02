@@ -1,7 +1,7 @@
 use std::io::{Write, Read};
 use byteorder::{WriteBytesExt, ReadBytesExt, LittleEndian};
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Eq, Debug)]
 pub struct Channel1{
     // Raw control registers
     pub nr10: u8,
