@@ -71,6 +71,26 @@ fn save_sram(filepath: &str, data: &[u8]){
     }
 }
 
+fn save_state_to_disk(filepath: &str, data: &[u8])
+{
+    let save_file = fs::OpenOptions::new()
+        .write(true)
+        .truncate(true)
+        .create(true)
+        .open(filepath);
+    if let Ok(mut save_file) = save_file{
+        save_file.write_all(data).unwrap_or_default();
+    }
+}
+
+fn load_state_from_disk(filepath: &str) -> Result<Vec<u8>, std::io::Error>
+{
+    let mut state_file = fs::File::open(filepath)?;
+    let mut state_data: Vec<u8> = Vec::new();
+    state_file.read_to_end(&mut state_data).unwrap_or(0);
+    Ok(state_data)
+}
+
 struct DmgSurfaceRenderer {
     surface: Surface<'static>,
     colors: [Color;4]
@@ -184,6 +204,7 @@ fn main() {
     if let Ok(sram) = ram_data {
         dmg.load_sram(&sram);
     }
+    let state_filepath = path.to_owned() + "_1.state";
 
     let scale = 4;
 
@@ -279,10 +300,13 @@ fn main() {
                         Event::KeyUp {keycode: Some(Keycode::F5), ..} => {
                             let mut writer = &mut save_state[..];
                             dmg.serialize(&mut writer);
+                            save_state_to_disk(&state_filepath, &save_state);
                         }
                         Event::KeyUp {keycode: Some(Keycode::F8), ..} => {
-                            let mut reader = &save_state[..];
-                            dmg.deserialize(&mut reader);
+                            if let Ok(data) = load_state_from_disk(&state_filepath){
+                                let mut reader = &data[..];
+                                dmg.deserialize(&mut reader);
+                            }
                         }
                         Event::KeyUp   { keycode: Some(key), .. } => { 
                             terrible_input_proc(&mut dmg, key, false);
