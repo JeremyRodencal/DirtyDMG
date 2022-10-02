@@ -2,7 +2,7 @@ use std::io::{Read, Write};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use crate::bus::BusRW;
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Eq, Debug)]
 pub struct Channel3{
     // Raw control registers
     pub nr30: u8,

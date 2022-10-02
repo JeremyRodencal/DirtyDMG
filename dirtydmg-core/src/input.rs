@@ -37,10 +37,7 @@ impl Gamepad{
     }
 
     fn is_dpad(button:&Button) -> bool{
-        match button {
-            Button::Up | Button::Down | Button::Left | Button::Right => {true}
-            _ => false
-        }
+        matches!(button, Button::Up | Button::Down | Button::Left | Button::Right)
     }
 
     fn get_mask(button:&Button) -> u8 {

@@ -8,7 +8,7 @@ const TIMA_REG_ADDR:usize = 0xFF05;
 const TMA_REG_ADDR:usize  = 0xFF06;
 const TAC_REG_ADDR:usize  = 0xFF07;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct TimerUnit {
     // Raw registers
     div:u8,

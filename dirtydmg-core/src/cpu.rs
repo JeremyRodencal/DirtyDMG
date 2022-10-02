@@ -36,7 +36,7 @@ enum Register {
 /// Registers are all represented in their smallest usable form.
 /// This means 16 bit registers are stored as two distinct 8 bit registers.
 /// 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Regs {
     pub a:u8,
     pub f:u8,
