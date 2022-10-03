@@ -22,6 +22,10 @@ use dirtydmg_core::input::Button;
 use dirtydmg_core::interface::ScanlineBuffer;
 use dirtydmg_core::sound::AudioChannel;
 
+use crate::input::HatSwitchHandler;
+
+mod input;
+
 fn load_file(filepath: &str) -> Result<Vec<u8>, std::io::Error>
 {
     let mut rom_file = fs::File::open(filepath)?;
@@ -175,6 +179,22 @@ fn terrible_joypad_btn_proc(dmg: &mut Dmg, _which:u32, btn_idx:u8, down:bool){
     }
 }
 
+fn terrible_hat_change_proc(dmg: &mut Dmg, hat_handler: &input::HatSwitchHandler)
+{
+    if let Some(pressed) = hat_handler.up_changed(){
+        dmg.input(Button::Up, pressed);
+    }
+    if let Some(pressed) = hat_handler .down_changed(){
+        dmg.input(Button::Down, pressed);
+    }
+    if let Some(pressed) = hat_handler .left_changed(){
+        dmg.input(Button::Left, pressed);
+    }
+    if let Some(pressed) = hat_handler .right_changed(){
+        dmg.input(Button::Right, pressed);
+    }
+}
+
 fn main() {
 
     let args:Vec<String> = std::env::args().collect();
@@ -213,20 +233,21 @@ fn main() {
     let video = context.video().unwrap();
     let audio = context.audio().unwrap();
     let joystick = context.joystick().unwrap();
+    let mut hat_tracker = HatSwitchHandler::new();
 
-    let mut joy:Option<Joystick> = None;
+    let mut _joy:Option<Joystick> = None;
     if let Ok(x) = joystick.num_joysticks(){
         println!("Found {} joysticks", x);
         if x > 0 {
             if let Ok(j) = joystick.open(0){
-                println!("Openned joystick {}", 0);
-                joy = Some(j);
+                println!("Openned joystick {}", j.guid());
+                _joy = Some(j);
             }
         }
     }
-    if let Some(x) = joy {
-        println!("joystick guid {}", x.guid());
-    }
+    // if let Some(joystick) = joy {
+    //     println!("Joystick GUID: {}", joystick.guid());
+    // }
 
     let desired_spec = AudioSpecDesired {
         freq: Some(44100),
@@ -320,6 +341,10 @@ fn main() {
                         Event::JoyButtonUp{timestamp:_, which, button_idx} => {
                             terrible_joypad_btn_proc(&mut dmg, which, button_idx, false);
                         },
+                        Event::JoyHatMotion { state, .. } => {
+                            hat_tracker.update(state);
+                            terrible_hat_change_proc(&mut dmg, &hat_tracker);
+                        }
                         _ => {}
                     }
                 }
