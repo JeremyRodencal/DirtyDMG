@@ -166,8 +166,8 @@ fn terrible_joypad_btn_proc(dmg: &mut Dmg, _which:u32, btn_idx:u8, down:bool){
     let btn = match btn_idx {
         0 => {Some(Button::A)},
         2 => {Some(Button::B)},
-        6 => {Some(Button::Start)},
-        4 => {Some(Button::Select)},
+        9 => {Some(Button::Start)},
+        8 => {Some(Button::Select)},
         11 => {Some(Button::Up)}
         12 => {Some(Button::Down)}
         13 => {Some(Button::Left)}
