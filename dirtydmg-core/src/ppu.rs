@@ -151,7 +151,7 @@ impl Tile {
     // Updates a row of a tile with either msb or lsb pixel data.
     pub fn update_row(&mut self, mut data:u8, y:usize, msb:bool)
     {
-        let shift = if msb {1} else {0};
+        let shift = msb as u32;
         let clear_mask = !(1<<shift);
 
         // Pixels are stored such that the leftmost pixel is the MSB and rightmost pixel is the LSB

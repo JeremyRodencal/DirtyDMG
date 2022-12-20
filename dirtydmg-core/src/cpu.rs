@@ -1244,9 +1244,7 @@ impl Cpu {
 
             Rla => {
                 // Determine the carry in for bit zero.
-                let carry_in = 
-                    if self.reg.f & Regs::CARRY_FLAG > 0 {1}
-                    else {0};
+                let carry_in = (self.reg.f & Regs::CARRY_FLAG != 0) as u8;
                 // Determine if the carry flag should be set.
                 self.reg.f = 
                     if self.reg.a & 0x80 > 0 {Regs::CARRY_FLAG}

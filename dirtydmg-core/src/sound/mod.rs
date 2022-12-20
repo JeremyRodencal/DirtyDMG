@@ -253,7 +253,7 @@ impl Apu {
 
     pub fn user_set_channel_enable_toggle(&mut self, channel: AudioChannel){
         let channel = channel as usize;
-        self.ch_user_enable[channel as usize] = !self.ch_user_enable[channel as usize];
+        self.ch_user_enable[channel] = !self.ch_user_enable[channel];
     }
 
     pub fn serialize<T>(&self, writer:&mut T)
